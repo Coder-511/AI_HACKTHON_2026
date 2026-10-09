@@ -1,0 +1,93 @@
+# Moshkelti local runbook
+
+The implemented pilot uses Laravel 13, PHP, MySQL-compatible MariaDB, Blade, and local CSS/JavaScript. No npm build is needed for these pages.
+
+## Already configured in this workspace
+
+- XAMPP MariaDB is listening on 127.0.0.1:3306.
+- The dedicated `moshkelti` database has been migrated and seeded with five simulated Amman departments and one clearly labelled pilot news item.
+- The ignored `.env` uses `moshkelti_runtime`, with a generated password and only SELECT, INSERT, UPDATE and DELETE grants on this database.
+- No administrator or default citizen password was seeded. The old SQLite database was not erased.
+- The local web server is available at http://127.0.0.1:8000 while the started process remains running.
+
+## Run locally
+
+From the project root, in separate PowerShell terminals:
+
+```powershell
+php artisan serve --host=127.0.0.1 --port=8000
+php artisan queue:work --tries=3 --timeout=60
+```
+
+If port 8000 is already serving this app, do not start another server. Keep the queue worker running; submissions return immediately and analysis runs asynchronously. Queue retry-after is 90 seconds; the worker timeout must remain lower.
+
+Create your own administrator interactively:
+
+```powershell
+php artisan moshkelti:create-admin your-email@example.com
+```
+
+Choose a real password of at least 12 characters. Sign in, confirm it, and enroll a TOTP authenticator using the displayed secret. Administrative changes require MFA and a password confirmation within 15 minutes. An operator-controlled recovery process is needed if the authenticator is lost; there is deliberately no public MFA-reset bypass.
+
+Citizen registration now starts with a unique 10-digit national ID. Name and email come from a separate synthetic registry, not editable registration fields. A six-digit code goes only to the registry-held email; after verification, choose a password. Sign in using that registry email and password. Existing administrator/email accounts remain compatible.
+
+The `moshkelti_registry` database has four synthetic records. Active test IDs are `0000000001`, `0000000002`, and `0000000003`; `0000000004` is inactive. Do not use real identity data in this pilot. `moshkelti_registry_reader` has SELECT-only access to this database and no application-database access.
+
+Local verification/reset messages go to the private `storage/logs/mail.log` through `MAIL_LOG_CHANNEL=mail`. Read the newest registration message locally to obtain its code; it expires after five minutes and five guesses. Never share this log or expose it through the web server. Use an approved real mail transport in production, not a log-based OTP workflow.
+
+The mock adapter is disabled outside local/testing environments. An approved third-party adapter must implement `App\Contracts\CitizenRegistry`; government access, contact verification requirements, retention and privacy/legal review are not simulated authorization. This pilot has no official government identity connection.
+
+Both `IDENTITY_LOOKUP_KEY` and `REGISTRY_LOOKUP_KEY` are independently generated secrets in the ignored `.env`. Back them up securely alongside `APP_KEY`; never regenerate them casually. Rotation requires a controlled fingerprint/encryption migration, or existing records will no longer resolve.
+
+## Database migrations
+
+The runtime user intentionally cannot migrate schemas. Supply separate migration credentials for a migration process; do not grant schema privileges to the web application. For this existing local XAMPP installation only, its separate root account has no password:
+
+```powershell
+$env:DB_USERNAME = 'root'
+$env:DB_PASSWORD = '(empty)'
+php artisan migrate --no-interaction
+Remove-Item Env:DB_USERNAME, Env:DB_PASSWORD
+```
+
+Do not use that root/empty-password setup in production. Never run `migrate:fresh` against the application database.
+
+Registry schema and synthetic seed data use a separate migration path and operator-only credentials. They are not part of the default app seeder. For this local installation:
+
+```powershell
+$env:REGISTRY_DB_USERNAME = 'root'
+$env:REGISTRY_DB_PASSWORD = '(empty)'
+php artisan migrate --database=registry --path=database/migrations/registry --no-interaction
+php artisan db:seed --database=registry --class=MockCitizenRegistrySeeder --no-interaction
+Remove-Item Env:REGISTRY_DB_USERNAME, Env:REGISTRY_DB_PASSWORD
+```
+
+Seeding is local/testing-only and creates no application accounts or default passwords. Run `php artisan schedule:work` locally for expired challenge cleanup. The current XAMPP table-level grant table reported damage during setup; it was not repaired. The registry's database-scoped SELECT-only grant works and write denial was verified. A database operator should inspect/repair the installation before production.
+
+## Verification and operations
+
+```powershell
+php artisan test --compact
+php vendor/bin/pint --dirty --format agent
+composer audit --locked
+php artisan moshkelti:security-check
+php artisan moshkelti:retention
+```
+
+The default tests use disposable in-memory SQLite. MySQL tests are guarded to accept only a dedicated database named `moshkelti_test_*`; they must never point at `moshkelti`. The implementation was also tested against an isolated MySQL database. A schema-capable test credential is required for that run.
+
+Retention is a preview by default, including the scheduled daily command. Only after approving the retention policy should an operator run `php artisan moshkelti:retention --apply`. This erases expired evidence and minimizes old closed-report text; it does not fulfill full account deletion. Back up and verify restoration before enabling it.
+
+## Optional external AI
+
+Default `MOSHKELTI_AI_DRIVER=local` is a deterministic Arabic/English keyword classifier, not a trained model. Attachments are evidence for human reviewers; no OCR or computer-vision inference is claimed.
+
+The optional `remote` adapter is an integration boundary, not a configured provider SDK. It requires an operator-approved HTTPS JSON classification service, an exact approved DNS host, a token, and explicit report consent. Configure `MOSHKELTI_AI_ENDPOINT`, `MOSHKELTI_AI_HOST` and `MOSHKELTI_AI_TOKEN` only after verifying the provider contract and response schema in `AnalysisValidator`. It is not directly compatible with every vendor's API.
+
+The service receives bounded, best-effort-redacted title/description and coarse report context, never account identity, exact coordinates or attachments. Free-text redaction cannot guarantee removal of every personal detail; complete a privacy review before real use. The provider's retention/training behavior must be independently verified. Daily request quotas are enforced; no AI result may approve, publish, ban or dispatch.
+
+## Pilot limits
+
+Government dispatch is simulated, with deterministic SIM receipts and no external government HTTP/email calls. Official integration requires new authorized implementation, endpoint validation, signed payloads and receiver-side idempotency. Governorate correction is reviewer-controlled; no authoritative boundary dataset is installed. Legal/erasure requests are recorded for manual handling, not marked fulfilled automatically.
+
+See [SECURITY.md](SECURITY.md) for controls and production blockers.

@@ -32,6 +32,21 @@ return [
 
     'connections' => [
 
+        'registry' => [
+            'driver' => 'mysql',
+            'host' => env('REGISTRY_DB_HOST', '127.0.0.1'),
+            'port' => env('REGISTRY_DB_PORT', '3306'),
+            'database' => env('REGISTRY_DB_DATABASE', 'moshkelti_registry'),
+            'username' => env('REGISTRY_DB_USERNAME', 'moshkelti_registry_reader'),
+            'password' => env('REGISTRY_DB_PASSWORD', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'timezone' => '+00:00',
+        ],
+
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
@@ -46,6 +61,7 @@ return [
 
         'mysql' => [
             'driver' => 'mysql',
+            'timezone' => '+00:00',
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),
@@ -66,6 +82,7 @@ return [
 
         'mariadb' => [
             'driver' => 'mariadb',
+            'timezone' => '+00:00',
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),
