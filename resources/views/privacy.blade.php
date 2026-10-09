@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'الخصوصية | Privacy — Moshkelti')
+@section('title', __('Privacy').' — '.__('Moshkelti'))
 @section('content')
 <div class="narrow-content">
     <div class="page-heading"><div><p class="eyebrow"><span lang="ar">ثقة تبدأ بالوضوح</span><span lang="en">Trust starts with clarity</span></p><h1><span lang="ar">معلوماتك، بمسؤولية.</span><span lang="en">Your information, handled responsibly.</span></h1><p lang="ar">إشعار خصوصية النسخة التجريبية من مشكلتي. اقرأه قبل مشاركة بياناتك.</p><p lang="en">Privacy notice for the Moshkelti demo. Please read before sharing your information.</p></div></div>
@@ -26,12 +26,12 @@
         @auth
         <form method="POST" action="{{ route('account.privacy') }}" class="request-form">
             @csrf
-            <div class="field"><label for="privacy-type">نوع الطلب / Request type</label><select id="privacy-type" name="type" required><option value="access">الوصول / Access</option><option value="correction">التصحيح / Correction</option><option value="erase">المحو / Erasure</option><option value="withdraw">سحب الموافقة الخارجية / Withdraw external AI consent</option></select></div>
-            <div class="field"><label for="privacy-details">التفاصيل / Details</label><textarea id="privacy-details" name="details" rows="3" maxlength="2000" dir="auto">{{ old('details') }}</textarea></div>
-            <button class="button button-secondary" type="submit">إرسال الطلب / Send request</button>
+            <div class="field"><label for="privacy-type">{{ __('Request type') }}</label><select id="privacy-type" name="type" required><option value="access">{{ __('Access') }}</option><option value="correction">{{ __('Correction') }}</option><option value="erase">{{ __('Erasure') }}</option><option value="withdraw">{{ __('Withdraw external AI consent') }}</option></select></div>
+            <div class="field"><label for="privacy-details">{{ __('Details') }}</label><textarea id="privacy-details" name="details" rows="3" maxlength="2000" dir="auto">{{ old('details') }}</textarea></div>
+            <button class="button button-secondary" type="submit">{{ __('Send request') }}</button>
         </form>
         @else
-        <p><a href="{{ route('login') }}">سجّل الدخول لطلب مراجعة بياناتك / Sign in to request a data review</a></p>
+        <p><a href="{{ route('login') }}">{{ __('Sign in to request a data review') }}</a></p>
         @endauth
     </section>
     <div class="form-actions"><a class="button" href="{{ route('reports.index') }}"><span lang="ar">استكشف البلاغات</span><span lang="en">Explore reports</span></a><a href="{{ route('home') }}"><span lang="ar">العودة للرئيسية</span><span lang="en">Back to home</span></a></div>

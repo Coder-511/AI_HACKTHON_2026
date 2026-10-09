@@ -22,7 +22,8 @@ class RemoteAnalyzer implements IssueAnalyzer
         $response = Http::withToken($token)->acceptJson()->connectTimeout(5)->timeout(25)->withoutRedirecting()
             ->withOptions([
                 'proxy' => '', 'verify' => true,
-                'curl' => [CURLOPT_RESOLVE => [$target['resolve']], CURLOPT_PROTOCOLS => CURLPROTO_HTTPS],
+                'protocols' => ['https'],
+                'curl' => [CURLOPT_RESOLVE => [$target['resolve']]],
                 'on_headers' => function ($response): void {
                     if ((int) $response->getHeaderLine('Content-Length') > 65536) {
                         throw new \RuntimeException('AI response exceeded its limit.');

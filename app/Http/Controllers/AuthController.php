@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\AdminMfa;
+use App\Services\AdminVerification;
 use App\Services\NationalIdentity;
 use App\Services\SecurityAudit;
 use Closure;
@@ -200,7 +201,11 @@ class AuthController extends Controller implements HasMiddleware
 
     public function confirmForm(Request $request): View
     {
-        $this->authenticatedUser($request);
+        $user = $this->authenticatedUser($request);
+        if ($user->canReviewReports() && $request->hasValidSignature() && is_string($request->query('context'))) {
+            $report = $request->query('report');
+            app(AdminVerification::class)->rememberPage($request, $request->query('context'), is_string($report) ? $report : null);
+        }
 
         return view('auth.confirm-password');
     }
@@ -221,6 +226,12 @@ class AuthController extends Controller implements HasMiddleware
         $request->session()->passwordConfirmed();
         $request->session()->forget('url.intended');
         $this->audit->record('auth.password_confirmed', $user);
+
+        if ($user->is_admin && $user->mfa_confirmed_at !== null
+            && $request->session()->get('admin_mfa_verified') === $user->getAuthIdentifier()) {
+            return app(AdminVerification::class)->redirect($request)
+                ->with('status', 'Password confirmed. No administrative action was performed. Review the current page and submit the action explicitly.');
+        }
 
         return $this->afterAuthentication($user);
     }
@@ -283,7 +294,7 @@ class AuthController extends Controller implements HasMiddleware
         $this->completeMfa($request, $user, $key);
         $this->audit->record('auth.mfa_enabled', $user, $user);
 
-        return redirect('/')->with('status', 'Administrator authentication is enabled.');
+        return app(AdminVerification::class)->redirect($request)->with('status', 'Administrator authentication is enabled.');
     }
 
     public function mfaChallenge(Request $request): View|RedirectResponse
@@ -295,7 +306,7 @@ class AuthController extends Controller implements HasMiddleware
         }
 
         return $request->session()->get('admin_mfa_verified') === $user->getAuthIdentifier()
-            ? redirect('/') : view('auth.mfa-challenge');
+            ? app(AdminVerification::class)->redirect($request) : view('auth.mfa-challenge');
     }
 
     public function mfaVerify(Request $request): RedirectResponse
@@ -318,7 +329,7 @@ class AuthController extends Controller implements HasMiddleware
         $this->completeMfa($request, $user, $key);
         $this->audit->record('auth.mfa_verified', $user);
 
-        return redirect('/');
+        return app(AdminVerification::class)->redirect($request);
     }
 
     private function authenticatedUser(Request $request): User
@@ -353,7 +364,7 @@ class AuthController extends Controller implements HasMiddleware
     private function renewAuthenticationSession(Request $request): void
     {
         $request->session()->regenerate();
-        $request->session()->forget(['admin_mfa_verified', 'admin_mfa_enrollment', 'auth.password_confirmed_at', 'url.intended']);
+        $request->session()->forget(['admin_mfa_verified', 'admin_mfa_enrollment', 'admin.verification_return', 'auth.password_confirmed_at', 'url.intended']);
     }
 
     private function completeMfa(Request $request, User $user, string $limiterKey): void
@@ -366,9 +377,7 @@ class AuthController extends Controller implements HasMiddleware
 
     private function recentlyConfirmedPassword(Request $request): bool
     {
-        $confirmedAt = $request->session()->get('auth.password_confirmed_at');
-
-        return is_int($confirmedAt) && $confirmedAt <= now()->getTimestamp() && $confirmedAt >= now()->getTimestamp() - 900;
+        return app(AdminVerification::class)->passwordConfirmed($request);
     }
 
     /** @return array{user_id: int|string, secret: string, expires_at: int}|null */

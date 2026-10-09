@@ -50,8 +50,9 @@ class SafeEndpoint
             // Restrict IPv6 to global-unicast and exclude transition/mapped/documentation addresses.
             $packed = inet_pton($ip);
             if (! $packed || (ord($packed[0]) & 0xE0) !== 0x20
-                || str_starts_with(strtolower($ip), '2001:db8') || str_starts_with(strtolower($ip), '2002:')
-                || str_starts_with(strtolower($ip), '2001:0:')) {
+                || substr($packed, 0, 4) === "\x20\x01\x0d\xb8"
+                || substr($packed, 0, 2) === "\x20\x02"
+                || substr($packed, 0, 4) === "\x20\x01\x00\x00") {
                 return false;
             }
         }

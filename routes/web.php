@@ -44,8 +44,9 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/account/appeal', [AccountController::class, 'appeal'])->middleware('throttle:appeals')->name('account.appeal');
     Route::post('/account/privacy', [AccountController::class, 'privacy'])->middleware('throttle:appeals')->name('account.privacy');
     Route::get('/attachments/{attachment}', [ReportController::class, 'download'])->middleware(['signed', 'throttle:reads'])->name('attachments.download');
+    Route::get('/attachments/{attachment}/preview', [ReportController::class, 'preview'])->middleware(['signed', 'throttle:reads'])->name('attachments.preview');
+    Route::get('/reports/create', [ReportController::class, 'create'])->middleware(['submission', 'throttle:reads'])->name('reports.create');
     Route::middleware(['submission', 'throttle:submission'])->group(function (): void {
-        Route::get('/reports/create', [ReportController::class, 'create'])->name('reports.create');
         Route::post('/reports', [ReportController::class, 'store'])->name('reports.store');
         Route::patch('/reports/{report}', [ReportController::class, 'information'])->name('reports.update');
         Route::post('/reports/{report}/additional-information', [ReportController::class, 'information'])->name('reports.information');

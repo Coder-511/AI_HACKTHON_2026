@@ -447,7 +447,7 @@ class AuthenticationSecurityTest extends TestCase
             'auth.password_confirmed_at' => now()->getTimestamp(), 'admin_mfa_enrollment' => $this->pendingEnrollment($user),
         ])->post(route('mfa.enable'), ['code' => '287082', 'secret' => 'untrusted']);
 
-        $response->assertRedirect('/')->assertSessionHas('admin_mfa_verified', $user->id)
+        $response->assertRedirectToRoute('admin.index')->assertSessionHas('admin_mfa_verified', $user->id)
             ->assertSessionMissing('admin_mfa_enrollment')->assertSessionMissing('_old_input.code');
         $this->assertSame(self::TotpSecret, $user->fresh()->mfa_secret);
         $this->assertNotSame(self::TotpSecret, $user->fresh()->getRawOriginal('mfa_secret'));
@@ -520,7 +520,7 @@ class AuthenticationSecurityTest extends TestCase
 
         $response = $this->post(route('mfa.verify'), ['code' => '287082']);
 
-        $response->assertRedirect('/')->assertSessionHas('admin_mfa_verified', $user->id)->assertSessionMissing('url.intended');
+        $response->assertRedirectToRoute('admin.index')->assertSessionHas('admin_mfa_verified', $user->id)->assertSessionMissing('url.intended');
         $this->assertNotSame($oldSessionId, session()->getId());
         $this->assertDatabaseHas('users', ['id' => $user->id, 'mfa_last_counter' => 1]);
         $this->assertDatabaseHas('audit_logs', ['event' => 'auth.mfa_verified', 'actor_id' => $user->id]);

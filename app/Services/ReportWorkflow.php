@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 
 class ReportWorkflow
 {
+    public const REVIEW_DECISIONS = ['accept' => 'accepted', 'reject' => 'rejected', 'needs_more_information' => 'needs_more_information', 'resolve' => 'resolved', 'reopen' => 'needs_review'];
+
     private const TRANSITIONS = [
         'received' => ['processing'],
         'processing' => ['needs_review', 'needs_more_information', 'emergency_guidance', 'service_guidance', 'duplicate'],
@@ -26,6 +28,13 @@ class ReportWorkflow
         'emergency_guidance' => ['needs_review'],
         'service_guidance' => ['needs_review'],
     ];
+
+    public function allowedReviewDecisions(Report $report): array
+    {
+        return array_keys(array_filter(self::REVIEW_DECISIONS,
+            fn (string $status, string $decision): bool => in_array($status, self::TRANSITIONS[$report->status] ?? [], true)
+                && ($decision !== 'reopen' || in_array($report->status, ['resolved', 'rejected', 'duplicate', 'emergency_guidance', 'service_guidance'], true)), ARRAY_FILTER_USE_BOTH));
+    }
 
     public function transition(Report $report, string $status, string $message, ?User $actor = null): Report
     {

@@ -32,7 +32,7 @@
         accessReason: {
             account_restricted: ['التقديم موقوف بسبب قيد على الحساب.', 'Submissions are paused because the account is restricted.'],
             admin_read_only: ['حساب الإدارة مخصص للمراجعة ولا يقدّم بلاغات.', 'Administrator accounts review reports and do not submit them.'],
-            verification_required: ['تحقّق من بريدك الإلكتروني لتفعيل التقديم.', 'Verify your email address to enable submissions.']
+            verification_required: ['أكمل التحقّق من حسابك لتفعيل تقديم البلاغات.', 'Complete account verification to enable submissions.']
         }
     };
     const choose = (arabic, english) => root.lang === 'en' ? english : arabic;
@@ -68,15 +68,27 @@
     try {
         const explicitLanguage = new URL(window.location.href).searchParams.get('lang');
         const savedLanguage = localStorage.getItem('moshkelti.language');
-        setLanguage(['ar', 'en'].includes(explicitLanguage) ? explicitLanguage : (savedLanguage || root.lang));
+        if (['ar', 'en'].includes(explicitLanguage)) {
+            localStorage.setItem('moshkelti.language', root.lang);
+        }
+        if (!['ar', 'en'].includes(explicitLanguage) && ['ar', 'en'].includes(savedLanguage) && savedLanguage !== root.lang) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('lang', savedLanguage);
+            window.location.replace(url);
+            return;
+        }
+        setLanguage(root.lang);
     } catch {
         setLanguage(root.lang);
     }
     root.classList.add('js-ready');
     document.querySelectorAll('[data-language-toggle]').forEach((button) => {
         button.addEventListener('click', () => {
-            setLanguage(root.lang === 'ar' ? 'en' : 'ar');
-            try { localStorage.setItem('moshkelti.language', root.lang); } catch { /* Storage is optional. */ }
+            const language = root.lang === 'ar' ? 'en' : 'ar';
+            try { localStorage.setItem('moshkelti.language', language); } catch { /* Storage is optional. */ }
+            const url = new URL(window.location.href);
+            url.searchParams.set('lang', language);
+            window.location.assign(url);
         });
     });
 
@@ -210,6 +222,24 @@
         };
         publication?.addEventListener('change', update);
         update();
+    });
+
+    document.querySelectorAll('[data-admin-password-status]').forEach((element) => {
+        const confirmedAt = Number(element.dataset.confirmedAt) * 1000;
+        const serverNow = Number(element.dataset.serverNow);
+        const startedAt = performance.now();
+        const render = () => {
+            const now = serverNow + performance.now() - startedAt;
+            const valid = Number.isFinite(confirmedAt) && confirmedAt <= now && now - confirmedAt <= 900000;
+            const confirmLink = element.closest('.admin-security')?.querySelector('[data-admin-confirm-required]');
+            if (confirmLink) { confirmLink.hidden = valid; }
+            element.textContent = valid
+                ? choose('كلمة المرور: تأكيد حديث', 'Password: recently confirmed')
+                : choose('كلمة المرور: سيُطلب تأكيدها قبل الحفظ', 'Password: confirmation required before saving');
+        };
+        render();
+        window.setInterval(render, 10000);
+        document.addEventListener('moshkelti:language', render);
     });
 
     document.querySelectorAll('[data-report-form]').forEach((form) => {

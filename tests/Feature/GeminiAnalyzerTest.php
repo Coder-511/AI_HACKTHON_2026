@@ -58,6 +58,7 @@ class GeminiAnalyzerTest extends TestCase
 
         $this->assertSame('needs_review', $report->fresh()->status);
         $this->assertSame('gemini', ReportAnalysis::sole()->driver);
+        $this->assertSame('validated', ReportAnalysis::sole()->validation_state);
         $this->assertSame('medium', $report->fresh()->severity);
         $this->assertDatabaseCount('dispatch_outboxes', 0);
         $this->assertDatabaseCount('user_restrictions', 0);
@@ -90,6 +91,46 @@ class GeminiAnalyzerTest extends TestCase
         ];
     }
 
+    public function test_gemini_preserves_bilingual_questions_for_locale_independent_review(): void
+    {
+        $questions = [['ar' => 'هل يمكنك تحديد اسم الشارع؟', 'en' => 'Can you specify the street name?']];
+        $result = array_replace($this->validAnalysis(), ['missing_information' => $questions]);
+        $this->fakeResponse(['candidates' => [['finishReason' => 'STOP', 'content' => ['parts' => [['text' => json_encode($result)]]]]]]);
+        $report = Report::factory()->create(['status' => 'processing', 'external_ai_consent' => true]);
+        $this->runAnalysis($report);
+        $this->assertSame($questions, ReportAnalysis::sole()->result['missing_information']);
+        $this->assertSame('validated', ReportAnalysis::sole()->validation_state);
+        Http::assertSent(function (Request $request): bool {
+            $items = $request->data()['generationConfig']['responseJsonSchema']['properties']['missing_information']['items'];
+
+            return $items['type'] === 'object' && $items['required'] === ['ar', 'en'] && $items['additionalProperties'] === false;
+        });
+    }
+
+    public static function invalidQuestions(): array
+    {
+        return [
+            'single-language response' => [['Street name?']],
+            'missing Arabic' => [[['en' => 'Street name?']]],
+            'English in Arabic field' => [[['ar' => 'Street name?', 'en' => 'Street name?']]],
+            'extra action field' => [[['ar' => 'اسم الشارع؟', 'en' => 'Street name?', 'execute' => 'dispatch']]],
+            'unsafe Arabic HTML' => [[['ar' => '<script>اسم الشارع</script>', 'en' => 'Street name?']]],
+            'oversized translation' => [[['ar' => str_repeat('س', 201), 'en' => 'Street name?']]],
+        ];
+    }
+
+    #[DataProvider('invalidQuestions')]
+    public function test_invalid_bilingual_questions_fall_back_to_human_review(array $questions): void
+    {
+        $result = array_replace($this->validAnalysis(), ['missing_information' => $questions]);
+        $this->fakeResponse(['candidates' => [['finishReason' => 'STOP', 'content' => ['parts' => [['text' => json_encode($result)]]]]]]);
+        $report = Report::factory()->create(['status' => 'processing', 'external_ai_consent' => true]);
+        $this->runAnalysis($report);
+        $this->assertSame('review_fallback', ReportAnalysis::sole()->validation_state);
+        $this->assertSame('needs_review', $report->fresh()->status);
+        Http::assertSentCount(1);
+    }
+
     #[DataProvider('unacceptableResponses')]
     public function test_unacceptable_response_preserves_report_for_review(array $body, int $status): void
     {
@@ -98,6 +139,7 @@ class GeminiAnalyzerTest extends TestCase
         $this->runAnalysis($report);
         $this->assertSame('needs_review', $report->fresh()->status);
         $this->assertSame('uncertain', ReportAnalysis::sole()->result['classification']);
+        $this->assertSame('review_fallback', ReportAnalysis::sole()->validation_state);
         $this->assertDatabaseHas('audit_logs', ['event' => 'ai.invalid_or_unavailable']);
         Http::assertSentCount(1);
     }

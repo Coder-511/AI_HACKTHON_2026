@@ -24,11 +24,21 @@ class AnalysisValidator
             'confidence' => ['required', 'numeric', 'between:0,1'],
             'suggested_authority_id' => ['nullable', 'uuid'],
             'missing_information' => ['present', 'array', 'max:5'],
-            'missing_information.*' => ['string', 'max:200', new PlainText],
             'requires_human_review' => ['required', 'boolean'],
         ])->validate();
         if (! is_bool($result['requires_human_review']) || (! is_float($result['confidence']) && ! is_int($result['confidence'])) || ! array_is_list($result['missing_information'])) {
             throw new \UnexpectedValueException('Invalid AI field types.');
+        }
+        foreach ($validated['missing_information'] as $question) {
+            if (is_string($question)) {
+                Validator::make(['question' => $question], ['question' => ['required', 'string', 'max:200', new PlainText]])->validate();
+            } else {
+                Validator::make(['question' => $question], [
+                    'question' => ['required', 'array:ar,en'],
+                    'question.ar' => ['required', 'string', 'max:200', 'regex:/[\x{0600}-\x{06FF}]/u', new PlainText],
+                    'question.en' => ['required', 'string', 'max:200', 'regex:/[a-zA-Z]/', new PlainText],
+                ])->validate();
+            }
         }
 
         return $validated;

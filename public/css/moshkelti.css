@@ -32,6 +32,30 @@ body {
     line-height: 1.75
 }
 
+.header-inner > *,
+.two-column > *,
+.field-row > *,
+.user-card > *,
+.notice > *,
+.restriction-banner > * {
+    min-width: 0;
+}
+
+.notice,
+.field-error,
+.detail-title,
+.detail-list dd,
+.tracking-code {
+    overflow-wrap: anywhere;
+}
+
+input,
+textarea,
+select {
+    min-width: 0;
+    max-width: 100%;
+}
+
 html[lang="ar"] [lang="en"],
 html[lang="en"] [lang="ar"] {
     display: none !important
@@ -249,12 +273,12 @@ img {
     position: relative
 }
 
-.primary-nav>a[aria-current="page"] {
+.primary-nav>a:not(.button)[aria-current="page"] {
     color: var(--orange);
     font-weight: bold
 }
 
-.primary-nav>a[aria-current="page"]:after {
+.primary-nav>a:not(.button)[aria-current="page"]:after {
     content: "";
     height: 3px;
     width: 100%;
@@ -368,6 +392,32 @@ img {
 
 .text-link:hover {
     text-decoration: underline
+}
+
+.location-map {
+    height: clamp(280px, 45vw, 400px);
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+    background: var(--green-light);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin-block: 16px;
+    touch-action: none;
+    cursor: crosshair;
+    direction: ltr;
+}
+
+.location-map svg { display: block; }
+[data-location-picker] [hidden] { display: none !important; }
+.admin-security [hidden] { display: none !important; }
+.map-crosshair {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    color: var(--green);
+    font-size: 26px;
+    pointer-events: none;
 }
 
 html[lang="en"] .direction-arrow {
@@ -695,7 +745,8 @@ html[lang="en"] .direction-arrow {
     margin-top: 22px
 }
 
-.news-grid .panel+.panel {
+.news-grid .panel+.panel,
+.report-grid .panel+.panel {
     margin-top: 0
 }
 
@@ -1215,6 +1266,37 @@ select[aria-invalid="true"] {
     margin: 4px 0 0;
     font-size: .88rem;
     overflow-wrap: anywhere
+}
+
+.attachment-previews {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.attachment-preview {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid currentColor;
+    border-radius: 0.75rem;
+}
+
+.attachment-preview summary {
+    padding: 1rem;
+    cursor: pointer;
+}
+
+.attachment-preview summary:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -4px;
+}
+
+.attachment-preview img {
+    display: block;
+    width: 100%;
+    max-height: 70vh;
+    height: auto;
+    object-fit: contain;
 }
 
 .attachment-grid {
@@ -1920,6 +2002,14 @@ tbody tr:hover {
     .menu-toggle {
         font-size: .75rem
     }
+}
+
+@media (max-width: 380px) {
+    .header-inner { gap: 10px; }
+    .brand small { display: none; }
+    .header-tools { flex-wrap: wrap; }
+    .attachment-grid { grid-template-columns: 1fr; }
+    .panel { padding: 16px; }
 }
 
 @media(prefers-reduced-motion:reduce) {

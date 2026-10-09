@@ -1,4 +1,5 @@
 @extends('layouts.app')
+@section('title', __('Reset your password').' — '.__('Moshkelti'))
 
 @section('content')
 <section class="panel form-panel narrow-content" aria-labelledby="reset-heading">

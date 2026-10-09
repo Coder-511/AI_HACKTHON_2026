@@ -37,8 +37,14 @@ class ReportController extends Controller
         return $this->listing($request, false);
     }
 
-    public function mine(ListReportsRequest $request): View|AnonymousResourceCollection
+    public function mine(ListReportsRequest $request): View|AnonymousResourceCollection|RedirectResponse
     {
+        if ($request->user()->is_admin) {
+            abort_if($request->expectsJson(), 403);
+
+            return redirect()->route($request->user()->canReviewReports() ? 'admin.index' : 'home');
+        }
+
         return $this->listing($request, true);
     }
 
@@ -130,7 +136,8 @@ class ReportController extends Controller
             app(SubmissionAccess::class)->ensure($owner);
             $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
             abort_unless($locked->user_id === $owner->id, 404);
-            abort_unless($locked->status === 'needs_more_information' && $locked->version === $data['version'], 409, 'Report changed; reload before editing.');
+            Gate::authorize('update', $locked);
+            abort_unless($locked->status === 'needs_more_information' && $locked->version === (int) $data['version'], 409, 'Report changed; reload before editing.');
             $locked->description = $data['description'];
             $locked->save();
             $locked = app(ReportWorkflow::class)->transition($locked, 'processing', 'Additional information received.', $owner);
@@ -149,14 +156,38 @@ class ReportController extends Controller
             app(SubmissionAccess::class)->ensure($owner);
             $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
             abort_unless($locked->user_id === $owner->id && $locked->status === 'needs_more_information', 409);
+            Gate::authorize('update', $locked);
             abort_unless($locked->attachments()->count() < config('moshkelti.attachment_limit'), 422, 'Attachment limit reached.');
             $storage->store($locked, $request->file('attachment'));
+            $locked->version++;
+            $locked->save();
+            app(SecurityAudit::class)->record('report.evidence_added', $owner, $locked);
         });
 
         return response()->json(['status' => 'attachment_received'], 201);
     }
 
     public function download(Request $request, ReportAttachment $attachment): StreamedResponse
+    {
+        $this->authorizeAttachment($request, $attachment);
+
+        return Storage::disk('private')->download($attachment->path, 'report-evidence.jpg', ['Content-Type' => 'image/jpeg', 'Cache-Control' => 'no-store']);
+    }
+
+    public function preview(Request $request, ReportAttachment $attachment): StreamedResponse
+    {
+        $this->authorizeAttachment($request, $attachment);
+        abort_unless($attachment->mime === 'image/jpeg'
+            && Storage::disk('private')->mimeType($attachment->path) === 'image/jpeg', 404);
+
+        return Storage::disk('private')->response($attachment->path, 'report-evidence.jpg', [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'no-store, private',
+            'Cross-Origin-Resource-Policy' => 'same-origin',
+        ], 'inline');
+    }
+
+    private function authorizeAttachment(Request $request, ReportAttachment $attachment): void
     {
         $report = $attachment->report;
         Gate::authorize('download', $report);
@@ -167,8 +198,6 @@ class ReportController extends Controller
         }
         abort_unless($attachment->isSafeForDownload(), 404);
         abort_unless(Storage::disk('private')->exists($attachment->path), 404);
-
-        return Storage::disk('private')->download($attachment->path, 'report-evidence.jpg', ['Content-Type' => 'image/jpeg', 'Cache-Control' => 'no-store']);
     }
 
     public function appeal(AppealRequest $request, Report $report): RedirectResponse|JsonResponse

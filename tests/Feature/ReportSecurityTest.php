@@ -8,6 +8,7 @@ use App\Models\Report;
 use App\Models\ReportAttachment;
 use App\Models\User;
 use App\Models\UserRestriction;
+use App\Policies\ReportPolicy;
 use App\Services\ReportSubmission;
 use App\Services\SecurityAudit;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -38,6 +39,32 @@ class ReportSecurityTest extends TestCase
         return array_replace(['title' => 'A dangerous public road pothole', 'description' => 'A large pothole is damaging vehicles on this public road.',
             'governorate' => 'Amman', 'category' => 'roads', 'latitude' => 31.95, 'longitude' => 35.91,
             'consent' => '1', 'idempotency_key' => (string) Str::uuid()], $overrides);
+    }
+
+    public function test_report_form_offers_a_map_with_manual_fallback_and_preserves_previous_coordinates(): void
+    {
+        $user = User::factory()->create();
+        $response = $this->actingAs($user)->withSession(['_old_input' => ['latitude' => '31.950000', 'longitude' => '35.910000']])
+            ->get(route('reports.create').'?lang=en')->assertOk()
+            ->assertSee('data-location-picker', false)->assertSee('data-map-load', false)
+            ->assertSee('data-map-manual open', false)->assertSee('value="31.950000"', false)
+            ->assertSee('value="35.910000"', false)->assertSee('js/location-picker.js')
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        $this->assertStringContainsString('img-src \'self\' data: https://tile.openstreetmap.org;', $response->headers->get('Content-Security-Policy'));
+        $this->assertStringContainsString("script-src 'self';", $response->headers->get('Content-Security-Policy'));
+        $home = $this->get(route('home'))->assertOk()->assertHeader('Referrer-Policy', 'same-origin');
+        $this->assertStringNotContainsString('tile.openstreetmap.org', $home->headers->get('Content-Security-Policy'));
+    }
+
+    public function test_map_coordinates_remain_required_and_server_validated(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->postJson(route('reports.store'), $this->payload(['latitude' => null, 'longitude' => null]))
+            ->assertUnprocessable()->assertJsonValidationErrors(['latitude', 'longitude']);
+        $this->postJson(route('reports.store'), $this->payload(['latitude' => 90, 'longitude' => 180]))
+            ->assertUnprocessable()->assertJsonValidationErrors(['latitude', 'longitude']);
+        $this->assertDatabaseCount('reports', 0);
+        Queue::assertNothingPushed();
     }
 
     public function test_active_verified_user_can_submit_and_owner_is_server_owned(): void
@@ -245,5 +272,66 @@ class ReportSecurityTest extends TestCase
     {
         $this->app->instance('env', 'local');
         $this->post(route('reports.store'), $this->payload())->assertStatus(419);
+    }
+
+    public function test_citizen_can_supply_a_valid_version_as_form_text(): void
+    {
+        $user = User::factory()->create();
+        $report = Report::factory()->create(['user_id' => $user->id, 'status' => 'needs_more_information', 'version' => 3]);
+        $this->actingAs($user)->postJson(route('reports.information', $report), ['version' => '3', 'description' => 'Additional road location information.'])->assertOk();
+        $this->assertSame(4, $report->fresh()->version);
+        Queue::assertPushed(AnalyzeReport::class);
+    }
+
+    public static function citizenUpdateStates(): array
+    {
+        return [
+            'received' => ['received', false], 'processing' => ['processing', false],
+            'awaiting review' => ['needs_review', false], 'requested information' => ['needs_more_information', true],
+            'accepted' => ['accepted', false], 'rejected' => ['rejected', false],
+            'routed' => ['routed', false], 'acknowledged' => ['acknowledged', false],
+            'in progress' => ['in_progress', false], 'dispatch failed' => ['dispatch_failed', false],
+            'resolved' => ['resolved', false], 'closed' => ['closed', false],
+            'duplicate' => ['duplicate', false], 'emergency' => ['emergency_guidance', false],
+            'personal service' => ['service_guidance', false],
+        ];
+    }
+
+    #[DataProvider('citizenUpdateStates')]
+    public function test_citizen_update_policy_only_opens_when_information_is_requested(string $status, bool $allowed): void
+    {
+        $user = User::factory()->create();
+        $report = Report::factory()->for($user)->create(['status' => $status]);
+        $this->assertSame($allowed, (new ReportPolicy)->update($user, $report)->allowed());
+    }
+
+    public static function reviewedStates(): array
+    {
+        return ['accepted' => ['accepted'], 'rejected' => ['rejected'], 'routed' => ['routed']];
+    }
+
+    #[DataProvider('reviewedStates')]
+    public function test_reviewed_reports_reject_all_citizen_mutations_but_keep_tracking_and_appeals(string $status): void
+    {
+        $user = User::factory()->create();
+        $report = Report::factory()->for($user)->create(['status' => $status, 'version' => 3, 'description' => 'Original reviewed road evidence.']);
+        $this->actingAs($user);
+        $payload = ['version' => '3', 'description' => 'Attempt to replace previously reviewed evidence.'];
+        $this->patchJson(route('reports.update', $report), $payload)->assertNotFound();
+        $this->postJson(route('reports.information', $report), $payload)->assertNotFound();
+        $this->postJson(route('reports.attachments', $report), ['attachment' => UploadedFile::fake()->image('new.jpg', 64, 64)])->assertNotFound();
+        $this->get(route('reports.show', $report).'?lang=en')->assertOk()
+            ->assertSee('Citizen updates are locked')->assertSee('تحديثات المواطن مغلقة')
+            ->assertSee('This form requests a decision review; it is not for comments or editing the report.')
+            ->assertDontSee('id="additional-description"', false);
+        $this->postJson(route('reports.appeal', $report), ['reason' => 'Please review the recorded decision and evidence again.'])->assertStatus(202);
+        $this->assertSame($status, $report->fresh()->status);
+        $this->assertSame(3, $report->fresh()->version);
+        $this->assertSame('Original reviewed road evidence.', $report->fresh()->description);
+        $this->assertDatabaseCount('report_attachments', 0);
+        $this->assertDatabaseCount('appeals', 1);
+        $this->assertDatabaseCount('report_events', 0);
+        $this->assertSame([], Storage::disk('private')->allFiles());
+        Queue::assertNothingPushed();
     }
 }

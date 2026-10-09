@@ -1,4 +1,5 @@
 @extends('layouts.app')
+@section('title', __('Verify your email address').' — '.__('Moshkelti'))
 
 @section('content')
 <section class="panel form-panel narrow-content" aria-labelledby="verification-heading">
@@ -8,9 +9,9 @@
         @csrf
         <button type="submit" class="button"><span lang="ar">إعادة إرسال رابط التأكيد</span><span lang="en">Resend verification link</span></button>
     </form>
-    <form method="POST" action="{{ route('logout') }}">
+    <form method="POST" action="{{ route('logout') }}" class="form-actions">
         @csrf
-        <button type="submit" class="text-link"><span lang="ar">تسجيل الخروج</span><span lang="en">Sign out</span></button>
+        <button type="submit" class="button button-secondary button-small"><span lang="ar">تسجيل الخروج</span><span lang="en">Sign out</span></button>
     </form>
 </section>
 @endsection

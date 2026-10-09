@@ -89,6 +89,26 @@ class AnalysisWorkflowTest extends TestCase
         $this->assertDatabaseCount('dispatch_outboxes', 0);
     }
 
+    public function test_exhausted_analysis_job_moves_to_review_without_exposing_exception(): void
+    {
+        $report = Report::factory()->create(['status' => 'processing']);
+        $job = new AnalyzeReport($report->id, $report->version);
+        $job->failed(new \RuntimeException('secret provider response'));
+        $job->failed(new \RuntimeException('repeated failure'));
+        $this->assertSame('needs_review', $report->fresh()->status);
+        $this->assertDatabaseCount('report_events', 1);
+        $this->assertDatabaseHas('audit_logs', ['event' => 'ai.job_failed']);
+        $this->assertDatabaseCount('report_analyses', 0);
+    }
+
+    public function test_stale_failed_job_does_not_change_newer_report_version(): void
+    {
+        $report = Report::factory()->create(['status' => 'processing', 'version' => 3]);
+        (new AnalyzeReport($report->id, 2))->failed(null);
+        $this->assertSame('processing', $report->fresh()->status);
+        $this->assertDatabaseCount('report_events', 0);
+    }
+
     public function test_exact_nearby_duplicate_links_without_exposing_private_case(): void
     {
         $existing = Report::factory()->create(['status' => 'accepted']);
@@ -159,7 +179,8 @@ class AnalysisWorkflowTest extends TestCase
     public static function unsafeAddresses(): array
     {
         return [['127.0.0.1'], ['10.0.0.1'], ['192.168.0.1'], ['172.16.0.1'], ['169.254.169.254'], ['0.0.0.0'],
-            ['::1'], ['fc00::1'], ['fe80::1'], ['::ffff:127.0.0.1'], ['2001:db8::1'], ['not-an-ip']];
+            ['::1'], ['fc00::1'], ['fe80::1'], ['::ffff:127.0.0.1'], ['2001:db8::1'], ['2001:0db8::1'],
+            ['2001:0000:1234::1'], ['2001::1234'], ['not-an-ip']];
     }
 
     #[DataProvider('unsafeAddresses')]

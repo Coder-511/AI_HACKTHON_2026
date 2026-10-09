@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'مشكلتي — صوتك يصنع الفرق | Moshkelti')
+@section('title', __('Your voice, a better place').' — '.__('Moshkelti'))
 @section('content')
 @if(! request()->routeIs('news.index'))
     <section class="hero">
@@ -10,7 +10,11 @@
             <p class="hero-description" lang="en">A damaged road? A broken streetlight? Make it heard. Document the issue, follow its progress, and help improve the place we call home.</p>
             <div class="actions">
                 @auth
-                    @if(auth()->user()->canSubmitIssues())
+                    @if(auth()->user()->is_admin)
+                        @if(auth()->user()->canReviewReports())
+                            <a class="button" href="{{ route('admin.index') }}"><span lang="ar">لوحة الإدارة</span><span lang="en">Admin dashboard</span></a>
+                        @endif
+                    @elseif(auth()->user()->canSubmitIssues())
                         <a class="button button-orange" href="{{ route('reports.create') }}"><span lang="ar">بلّغ عن مشكلة</span><span lang="en">Report an issue</span><span aria-hidden="true">＋</span></a>
                     @else
                         <a class="button" href="{{ route('reports.mine') }}"><span lang="ar">تابع بلاغاتي</span><span lang="en">Follow my reports</span></a>
@@ -42,7 +46,7 @@
     <div class="section-heading"><div><p class="eyebrow"><span lang="ar">نبقى على تواصل</span><span lang="en">Stay in the loop</span></p><h2 id="news-title"><span lang="ar">آخر المستجدات</span><span lang="en">Latest updates</span></h2></div><span class="badge"><span lang="ar">تحديثات المنصة التجريبية</span><span lang="en">Demo platform updates</span></span></div>
     <div class="news-grid">
         @forelse($news ?? [] as $item)
-            <article class="panel news-card"><time class="eyebrow" datetime="{{ $item->published_at?->toIso8601String() }}">{{ $item->published_at?->format('Y/m/d') }}</time><h3 dir="auto">{{ $item->title }}</h3><div class="prose preserve-lines" dir="auto">{{ $item->body }}</div></article>
+            <article class="panel news-card"><time class="eyebrow" datetime="{{ $item->published_at?->toIso8601String() }}">{{ $item->published_at?->format('Y/m/d') }}</time><h3 dir="auto">{{ __($item->title) }}</h3><div class="prose preserve-lines" dir="auto">{{ __($item->body) }}</div></article>
         @empty
             <div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><h3><span lang="ar">مساحة للأخبار القادمة</span><span lang="en">Room for what comes next</span></h3><p lang="ar">لا توجد تحديثات منشورة حالياً. ستظهر أخبار المنصة هنا عند نشرها.</p><p lang="en">No updates have been published yet. Platform news will appear here when available.</p></div>
         @endforelse

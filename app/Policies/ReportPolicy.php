@@ -17,13 +17,13 @@ class ReportPolicy
     public function update(User $user, Report $report): Response
     {
         return $user->id === $report->user_id && $user->canSubmitIssues()
-            && in_array($report->status, ['received', 'processing', 'needs_more_information'], true)
+            && $report->status === 'needs_more_information'
             ? Response::allow() : Response::denyAsNotFound();
     }
 
     public function download(User $user, Report $report): Response
     {
-        return ($user->is_admin || ($user->id === $report->user_id && $user->submissionAccess()['account_state'] !== 'banned'))
+        return ($user->canReviewReports() || (! $user->is_admin && $user->id === $report->user_id && $user->submissionAccess()['account_state'] !== 'banned'))
             ? Response::allow() : Response::denyAsNotFound();
     }
 

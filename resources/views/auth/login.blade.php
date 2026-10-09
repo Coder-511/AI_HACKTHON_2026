@@ -1,4 +1,5 @@
 @extends('layouts.app')
+@section('title', __('Sign in').' — '.__('Moshkelti'))
 @section('content')
 <section class="panel form-panel narrow-content" aria-labelledby="login-heading">
     <h1 id="login-heading" class="section-title"><span lang="ar">{{ $administratorLogin ? 'دخول الإدارة' : 'تسجيل الدخول إلى مشكلتي' }}</span><span lang="en">{{ $administratorLogin ? 'Administrator sign in' : 'Sign in to Moshkelti' }}</span></h1>
@@ -23,7 +24,7 @@
     <div class="form-actions">
         <a href="{{ route('password.request') }}" class="text-link"><span lang="ar">استعادة كلمة المرور بالبريد المسجل</span><span lang="en">Recover password using registry email</span></a>
         <a href="{{ route('register') }}" class="text-link"><span lang="ar">إنشاء حساب</span><span lang="en">Create an account</span></a>
-        @unless($administratorLogin)<a href="{{ route('admin.login') }}">دخول الإدارة / Administrator sign in</a>@endunless
+        @unless($administratorLogin)<a href="{{ route('admin.login') }}">{{ __('Administrator sign in') }}</a>@endunless
     </div>
 </section>
 @endsection

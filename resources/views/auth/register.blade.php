@@ -1,4 +1,5 @@
 @extends('layouts.app')
+@section('title', __('Join Moshkelti').' — '.__('Moshkelti'))
 @section('content')
 <section class="panel form-panel narrow-content" aria-labelledby="register-heading">
     <h1 id="register-heading" class="section-title"><span lang="ar">انضم إلى مشكلتي</span><span lang="en">Join Moshkelti</span></h1>
@@ -27,9 +28,9 @@
         <div class="field"><label for="national_id"><span lang="ar">الرقم الوطني (10 أرقام)</span><span lang="en">National ID (10 digits)</span></label><input id="national_id" name="national_id" type="text" required minlength="10" maxlength="10" inputmode="numeric" autocomplete="off" dir="ltr"></div>
         <div class="field"><label for="mobile_number"><span lang="ar">رقم الهاتف المسجل</span><span lang="en">Registry mobile number</span></label><input id="mobile_number" name="mobile_number" type="tel" required maxlength="20" autocomplete="tel" dir="ltr" placeholder="0790000001"></div>
         <label class="checkbox-label"><input type="checkbox" name="registry_consent" value="1" required><span lang="ar">أوافق على التحقق من بيانات السجل وفق إشعار الخصوصية.</span><span lang="en">I consent to the registry identity check under the privacy notice.</span></label>
-        <a href="{{ route('privacy') }}">الخصوصية / Privacy</a>
+        <a href="{{ route('privacy') }}">{{ __('Privacy') }}</a>
         <button type="submit" class="button"><span lang="ar">طلب رمز تحقق</span><span lang="en">{{ $stage === 'identity' ? 'Request SMS code' : 'Restart / request new SMS code' }}</span></button>
     </form>
-    <a href="{{ route('login') }}">تسجيل الدخول / Sign in</a>
+    <a href="{{ route('login') }}">{{ __('Sign in') }}</a>
 </section>
 @endsection

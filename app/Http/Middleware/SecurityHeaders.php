@@ -13,10 +13,11 @@ class SecurityHeaders
     {
         app()->instance('correlation_id', (string) Str::uuid());
         $response = $next($request);
-        $response->headers->set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+        $mapImages = $request->routeIs('reports.create') ? ' https://tile.openstreetmap.org' : '';
+        $response->headers->set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:".$mapImages."; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('X-Frame-Options', 'DENY');
-        $response->headers->set('Referrer-Policy', 'same-origin');
+        $response->headers->set('Referrer-Policy', $request->routeIs('reports.create') ? 'strict-origin-when-cross-origin' : 'same-origin');
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
         $response->headers->set('X-Correlation-ID', app('correlation_id'));
         if ($request->user() || $request->is('login', 'register', 'admin/*', 'reset-password/*')) {

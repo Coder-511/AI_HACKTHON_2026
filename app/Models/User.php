@@ -65,4 +65,9 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->submissionAccess()['can_submit'];
     }
+
+    public function canReviewReports(): bool
+    {
+        return $this->is_admin && $this->submissionAccess()['account_state'] === 'active';
+    }
 }

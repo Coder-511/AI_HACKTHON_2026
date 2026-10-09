@@ -3,6 +3,7 @@
 use App\Http\Middleware\RecentPassword;
 use App\Http\Middleware\RequireAdmin;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\SubmissionAllowed;
 use App\Services\SecurityAudit;
 use Illuminate\Foundation\Application;
@@ -20,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->appendToGroup('web', SetLocale::class);
         $middleware->append(SecurityHeaders::class);
         $middleware->trustHosts(at: fn () => ['^'.preg_quote((string) parse_url(config('app.url'), PHP_URL_HOST), '/').'$'], subdomains: false);
         $middleware->prependToPriorityList(ThrottleRequests::class, SubmissionAllowed::class);

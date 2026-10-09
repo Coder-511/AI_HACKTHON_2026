@@ -36,8 +36,9 @@ class AnalyzeReport implements ShouldQueue
         app()->instance('correlation_id', $report->correlation_id);
         try {
             $analysis = $analyzer->analyze($report);
+            $analysis['validation_state'] = 'validated';
         } catch (\Throwable) {
-            $analysis = ['driver' => config('moshkelti.ai_driver'), 'result' => [
+            $analysis = ['driver' => config('moshkelti.ai_driver'), 'validation_state' => 'review_fallback', 'result' => [
                 'classification' => 'uncertain', 'category' => null, 'severity' => 'low', 'confidence' => 0.0,
                 'suggested_authority_id' => null, 'missing_information' => [], 'requires_human_review' => true,
             ]];
@@ -52,7 +53,7 @@ class AnalyzeReport implements ShouldQueue
                 return;
             }
             ReportAnalysis::create(['report_id' => $report->id, 'report_version' => $this->version,
-                'driver' => $analysis['driver'], 'result' => $analysis['result'], 'validation_state' => 'validated', 'created_at' => now()]);
+                'driver' => $analysis['driver'], 'result' => $analysis['result'], 'validation_state' => $analysis['validation_state'], 'created_at' => now()]);
             $result = $analysis['result'];
             $report->category = $result['category'] ?? $report->category;
             $report->severity = $result['severity'];
@@ -81,6 +82,19 @@ class AnalyzeReport implements ShouldQueue
                 return;
             }
             $workflow->transition($report, 'needs_review', 'Your report is awaiting a human review of location, jurisdiction and evidence.');
+        });
+    }
+
+    public function failed(?\Throwable $exception): void
+    {
+        DB::transaction(function (): void {
+            $report = Report::query()->lockForUpdate()->find($this->reportId);
+            if (! $report || $report->status !== 'processing' || $report->version !== $this->version) {
+                return;
+            }
+            app()->instance('correlation_id', $report->correlation_id);
+            app(ReportWorkflow::class)->transition($report, 'needs_review', 'Automated processing could not finish. Your report is awaiting human review.');
+            app(SecurityAudit::class)->record('ai.job_failed', null, $report, ['reason_code' => 'terminal_failure']);
         });
     }
 

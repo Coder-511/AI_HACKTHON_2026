@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class AdminController extends Controller
@@ -37,13 +38,14 @@ class AdminController extends Controller
         $report->load(['user', 'attachments', 'analyses', 'events', 'authority']);
         $urls = [];
         foreach ($report->attachments as $attachment) {
-            if ($attachment->isSafeForDownload()) {
-                $urls[$attachment->id] = URL::temporarySignedRoute('attachments.download', now()->addMinutes(5), ['attachment' => $attachment->id]);
+            if ($attachment->isSafeForDownload() && $attachment->mime === 'image/jpeg') {
+                $urls[$attachment->id] = URL::temporarySignedRoute('attachments.preview', now()->addMinutes(5), ['attachment' => $attachment->id]);
             }
         }
         app(SecurityAudit::class)->record('admin.report_accessed', auth()->user(), $report);
 
-        return view('admin.report', ['report' => $report, 'authorities' => AuthorityUnit::where('active', true)->where('simulated', true)->get(), 'attachmentUrls' => $urls]);
+        return view('admin.report', ['report' => $report, 'authorities' => AuthorityUnit::where('active', true)->where('simulated', true)->get(), 'attachmentUrls' => $urls,
+            'allowedReviewDecisions' => app(ReportWorkflow::class)->allowedReviewDecisions($report)]);
     }
 
     public function decide(ReviewReportRequest $request, Report $report): RedirectResponse
@@ -51,7 +53,12 @@ class AdminController extends Controller
         $data = $request->validated();
         DB::transaction(function () use ($request, $report, $data): void {
             $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
-            abort_unless($locked->version === $data['version'], 409, 'Report changed; reload before reviewing.');
+            if ($locked->version !== (int) $data['version']) {
+                $this->decisionConflict($request, $locked, 'version', 'This report changed while you were reviewing it. Nothing was saved. Review the latest details before submitting again.');
+            }
+            if (! in_array($data['decision'], app(ReportWorkflow::class)->allowedReviewDecisions($locked), true)) {
+                $this->decisionConflict($request, $locked, 'decision', 'This decision is not available for the current report status. Nothing was saved. Choose one of the available actions.');
+            }
             $locked->citizen_reason = $data['reason'];
             if (! empty($data['governorate'])) {
                 $locked->resolved_governorate = $data['governorate'];
@@ -60,20 +67,23 @@ class AdminController extends Controller
                 $locked->category = $data['category'];
             }
             if ($data['decision'] === 'accept') {
-                $authority = AuthorityUnit::whereKey($data['authority_id'])->where('active', true)->where('simulated', true)
+                $authority = AuthorityUnit::whereKey($data['authority_id'] ?? null)->where('active', true)->where('simulated', true)
                     ->where('municipality', config('moshkelti.municipality'))
                     ->where('category', $locked->category)->where('governorate', $locked->resolved_governorate ?? $locked->governorate)->first();
-                abort_unless($authority, 422, 'Choose an approved authority matching the reviewed category and governorate.');
+                if (! $authority) {
+                    throw ValidationException::withMessages(['authority_id' => 'Choose an approved authority matching the reviewed category and governorate.'])
+                        ->redirectTo(route('admin.reports.show', $locked));
+                }
                 $locked->authority_id = $authority->id;
             }
             $locked->save();
-            $status = ['accept' => 'accepted', 'reject' => 'rejected', 'needs_more_information' => 'needs_more_information', 'resolve' => 'resolved', 'reopen' => 'needs_review'][$data['decision']];
+            $status = ReportWorkflow::REVIEW_DECISIONS[$data['decision']];
             $message = ['accept' => 'A human reviewer accepted this report.', 'reject' => 'A human reviewer declined this report; a reason and appeal are available.',
                 'needs_more_information' => 'A human reviewer requested more information.', 'resolve' => 'The pilot reviewer marked this issue resolved.', 'reopen' => 'The report was reopened for human review.'][$data['decision']];
             try {
                 $locked = app(ReportWorkflow::class)->transition($locked, $status, $message, $request->user());
             } catch (\DomainException) {
-                abort(409, 'This decision is not allowed from the current report state.');
+                $this->decisionConflict($request, $locked, 'decision', 'This decision is not available for the current report status. Nothing was saved. Choose one of the available actions.');
             }
             if ($data['publish'] ?? false) {
                 app(PublicReportPublisher::class)->publish($locked, $data['public_title'], $data['public_summary']);
@@ -85,6 +95,15 @@ class AdminController extends Controller
         });
 
         return redirect()->route('admin.reports.show', $report)->with('status', 'Review decision recorded.');
+    }
+
+    private function decisionConflict(Request $request, Report $report, string $field, string $message): never
+    {
+        if ($request->expectsJson()) {
+            abort(409, __($message));
+        }
+
+        throw ValidationException::withMessages([$field => $message])->redirectTo(route('admin.reports.show', $report));
     }
 
     public function users(): View
