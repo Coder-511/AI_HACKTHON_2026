@@ -33,11 +33,20 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perMinutes(10, 3)->by('identity-id:'.$identity->fingerprint('registration:'.$identifier)),
             ];
         });
-        RateLimiter::for('authentication', fn (Request $request) => [
-            Limit::perMinute(20)->by('auth-ip:'.$request->ip()),
-            Limit::perMinute(5)->by('auth-identity:'.hash('sha256', mb_strtolower(is_string($request->input('email')) ? $request->input('email') : '')).'|'.$request->ip()),
-            Limit::perMinute(10)->by('auth-account:'.hash('sha256', mb_strtolower(is_string($request->input('email')) ? trim($request->input('email')) : ''))),
-        ]);
+        RateLimiter::for('authentication', function (Request $request): array {
+            $identity = new NationalIdentity;
+            $nationalId = $request->input('national_id');
+            $email = $request->input('email');
+            $identifier = is_string($nationalId) ? $identity->normalize($nationalId)
+                : (is_string($email) ? mb_strtolower(trim($email)) : 'session:'.$request->session()->getId());
+            $fingerprint = $identity->fingerprint('authentication:'.$identifier);
+
+            return [
+                Limit::perMinute(20)->by('auth-ip:'.$request->ip()),
+                Limit::perMinute(5)->by('auth-identity:'.$fingerprint.'|'.$request->ip()),
+                Limit::perMinute(10)->by('auth-account:'.$fingerprint),
+            ];
+        });
         RateLimiter::for('mfa', fn (Request $request) => Limit::perMinute(5)->by('mfa:'.$request->user()?->id.'|'.$request->ip()));
         RateLimiter::for('submission', fn (Request $request) => [
             Limit::perMinute(3)->by('submit-user:'.$request->user()?->id),

@@ -16,9 +16,12 @@ Route::middleware('throttle:reads')->group(function (): void {
 });
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'loginForm'])->name('login');
+    Route::get('/admin/login', [AuthController::class, 'adminLoginForm'])->name('admin.login');
+    Route::post('/admin/login', [AuthController::class, 'adminLogin'])->middleware('throttle:authentication')->name('admin.login.store');
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:authentication')->name('login.store');
     Route::get('/register', [IdentityRegistrationController::class, 'create'])->name('register');
     Route::post('/register/identity', [IdentityRegistrationController::class, 'start'])->middleware('throttle:identity-registration')->name('register.identity');
+    Route::post('/register/verify', [IdentityRegistrationController::class, 'verify'])->middleware('throttle:authentication')->name('register.verify');
     Route::post('/register', [IdentityRegistrationController::class, 'store'])->middleware('throttle:authentication')->name('register.store');
     Route::get('/forgot-password', [AuthController::class, 'forgotForm'])->name('password.request');
     Route::post('/forgot-password', [AuthController::class, 'forgot'])->middleware('throttle:authentication')->name('password.email');

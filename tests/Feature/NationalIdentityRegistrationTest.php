@@ -8,6 +8,7 @@ use App\Models\RegistryCitizen;
 use App\Models\User;
 use App\Models\UserRestriction;
 use App\Notifications\IdentityVerificationCode;
+use App\Notifications\LocalSmsChannel;
 use App\Services\DatabaseCitizenRegistry;
 use App\Services\NationalIdentity;
 use App\Services\RegistryRegistration;
@@ -42,6 +43,7 @@ class NationalIdentityRegistrationTest extends TestCase
         DB::purge('registry');
         $migration = require database_path('migrations/registry/2026_10_09_140516_create_registry_citizens_table.php');
         $migration->up();
+        (require database_path('migrations/registry/2026_10_09_143439_add_mobile_to_registry_citizens.php'))->up();
     }
 
     public function test_registry_is_separate_and_uses_encrypted_synthetic_records(): void
@@ -79,7 +81,8 @@ class NationalIdentityRegistrationTest extends TestCase
         $this->assertSame('0000000001', $user->national_id);
         $this->assertSame($citizen->id, $user->registry_subject_id);
         $this->assertNotNull($user->identity_verified_at);
-        $this->assertTrue($user->hasVerifiedEmail());
+        $this->assertFalse($user->hasVerifiedEmail());
+        $this->assertTrue($user->hasVerifiedCitizenIdentity());
         $this->assertFalse($user->is_admin);
         $this->assertTrue(Hash::check(self::Password, $user->password));
         $this->assertNotSame('0000000001', DB::table('users')->value('national_id'));
@@ -90,14 +93,14 @@ class NationalIdentityRegistrationTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['event' => 'auth.registered', 'actor_id' => $user->id]);
     }
 
-    public function test_verification_is_delivered_only_to_the_registry_email_and_code_is_hashed(): void
+    public function test_verification_is_delivered_only_to_the_registry_mobile_and_code_is_hashed(): void
     {
         Notification::fake();
         $this->freezeTime();
         $citizen = $this->citizen();
         $code = $this->start();
         Notification::assertSentOnDemand(IdentityVerificationCode::class, function ($notification, $channels, $notifiable) use ($citizen): bool {
-            return $channels === ['mail'] && $notifiable->routes['mail'] === mb_strtolower($citizen->email);
+            return $channels === [LocalSmsChannel::class] && $notifiable->routes['sms'] === $citizen->mobile_number;
         });
         $challenge = IdentityRegistrationChallenge::query()->sole();
         $this->assertTrue(Hash::check($code, $challenge->code_hash));
@@ -134,7 +137,7 @@ class NationalIdentityRegistrationTest extends TestCase
     public function test_invalid_national_ids_are_rejected_without_flashing_sensitive_input(mixed $id): void
     {
         Notification::fake();
-        $this->post(route('register.identity'), ['national_id' => $id, 'registry_consent' => '1'])
+        $this->post(route('register.identity'), ['national_id' => $id, 'mobile_number' => '0790000001', 'registry_consent' => '1'])
             ->assertRedirectToRoute('register')->assertSessionHasErrors('national_id')->assertSessionMissing('_old_input.national_id');
 
         Notification::assertNothingSent();
@@ -155,7 +158,7 @@ class NationalIdentityRegistrationTest extends TestCase
         Notification::fake();
         $this->citizen();
         $this->post(route('register.identity'), [
-            'national_id' => '0000000001', 'registry_consent' => '1',
+            'national_id' => '0000000001', 'mobile_number' => '0790000001', 'registry_consent' => '1',
             'email' => 'attacker@example.test', 'name' => 'Attacker', 'is_admin' => true, 'registry_url' => 'http://169.254.169.254/',
         ])->assertSessionHasErrors('registration');
         Notification::assertNothingSent();
@@ -174,9 +177,9 @@ class NationalIdentityRegistrationTest extends TestCase
         $existing->forceFill(['national_id_hash' => app(NationalIdentity::class)->fingerprint('0000000001')])->save();
 
         foreach (['0000000001', '0000000002', '0000000009'] as $id) {
-            $response = $this->post(route('register.identity'), ['national_id' => $id, 'registry_consent' => '1']);
+            $response = $this->post(route('register.identity'), ['national_id' => $id, 'mobile_number' => '0790000001', 'registry_consent' => '1']);
             $response->assertRedirectToRoute('register')
-                ->assertSessionHas('status', 'If this ID is eligible, a verification code was sent to its registered email. The code expires in five minutes.');
+                ->assertSessionHas('status', 'If the ID and mobile match an eligible registry record, an SMS verification code was requested. It expires in five minutes. Local SMS is simulated.');
             $this->get(route('register'))->assertOk()->assertDontSee('existing@example.test')->assertDontSee('inactive@example.test');
         }
         Notification::assertNothingSent();
@@ -197,12 +200,12 @@ class NationalIdentityRegistrationTest extends TestCase
         $code = $this->start();
         $wrong = $code === '000000' ? '111111' : '000000';
         for ($attempt = 1; $attempt <= 5; $attempt++) {
-            $this->post(route('register.store'), $this->completion($wrong))->assertSessionHasErrors('registration');
+            $this->post(route('register.verify'), ['code' => $wrong])->assertSessionHasErrors('code');
             $this->assertSame($attempt, IdentityRegistrationChallenge::query()->sole()->attempts);
         }
         $this->travel(61)->seconds();
 
-        $this->post(route('register.store'), $this->completion($code))->assertSessionHasErrors('registration');
+        $this->post(route('register.verify'), ['code' => $code])->assertSessionHasErrors('code');
         $this->assertGuest();
         $this->assertDatabaseCount('users', 0);
     }
@@ -215,7 +218,7 @@ class NationalIdentityRegistrationTest extends TestCase
         $code = $this->start();
         $this->travel(5)->minutes();
 
-        $this->post(route('register.store'), $this->completion($code))->assertSessionHasErrors('registration');
+        $this->post(route('register.verify'), ['code' => $code])->assertSessionHasErrors('code');
 
         $this->assertGuest();
         $this->assertDatabaseCount('users', 0);
@@ -229,7 +232,7 @@ class NationalIdentityRegistrationTest extends TestCase
         $challengeId = session('identity_registration.id');
         $this->withSession(['identity_registration' => ['id' => $challengeId, 'secret' => str_repeat('z', 64)]]);
 
-        $this->post(route('register.store'), $this->completion($code))->assertSessionHasErrors('registration');
+        $this->post(route('register.verify'), ['code' => $code])->assertSessionHasErrors('code');
 
         $this->assertDatabaseCount('users', 0);
         $this->assertSame(0, IdentityRegistrationChallenge::query()->sole()->attempts);
@@ -245,7 +248,7 @@ class NationalIdentityRegistrationTest extends TestCase
         $secondCode = $this->start();
         $this->assertNotSame($sessionId, session()->getId());
         $this->assertNotNull(IdentityRegistrationChallenge::query()->find($first['id'])->consumed_at);
-        $this->assertNull(app(RegistryRegistration::class)->complete($first['id'], $first['secret'], $firstCode, self::Password));
+        $this->assertNull(app(RegistryRegistration::class)->complete($first['id'], $first['secret'], self::Password));
 
         $this->post(route('register.store'), $this->completion($secondCode))->assertRedirectToRoute('home');
         $this->assertDatabaseCount('users', 1);
@@ -259,7 +262,7 @@ class NationalIdentityRegistrationTest extends TestCase
         $challenge = session('identity_registration');
         $this->post(route('register.store'), $this->completion($code))->assertRedirectToRoute('home');
 
-        $this->assertNull(app(RegistryRegistration::class)->complete($challenge['id'], $challenge['secret'], $code, self::Password));
+        $this->assertNull(app(RegistryRegistration::class)->complete($challenge['id'], $challenge['secret'], self::Password));
         $this->assertDatabaseCount('users', 1);
         $duplicate = User::factory()->make(['email' => 'second@example.test']);
         $duplicate->forceFill(['national_id_hash' => app(NationalIdentity::class)->fingerprint('0000000001')]);
@@ -282,10 +285,10 @@ class NationalIdentityRegistrationTest extends TestCase
         $user->forceFill(['national_id_hash' => app(NationalIdentity::class)->fingerprint('0000000001'), 'registry_subject_id' => $citizen->id])->save();
         UserRestriction::factory()->create(['user_id' => $user->id, 'type' => $type, 'starts_at' => now()->subMinute(), 'ends_at' => now()->addDay()]);
 
-        $this->post(route('register.identity'), ['national_id' => '0000000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => '0000000001', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
         Notification::assertNothingSent();
         $this->assertDatabaseCount('users', 1);
-        $this->post(route('login.store'), ['email' => $user->email, 'password' => self::Password])->assertRedirect('/');
+        $this->post(route('login.store'), ['national_id' => $citizen->national_id, 'password' => self::Password])->assertRedirect('/');
         $this->get(route('news.index'))->assertOk();
         $this->assertFalse($user->fresh()->canSubmitIssues());
     }
@@ -318,14 +321,16 @@ class NationalIdentityRegistrationTest extends TestCase
         Notification::fake();
         $this->citizen();
         $service = app(RegistryRegistration::class);
-        $first = $service->start('0000000001', str_repeat('x', 64));
+        $first = $service->start('0000000001', '+962790000001', str_repeat('x', 64));
         $firstCode = Notification::sent(new AnonymousNotifiable, IdentityVerificationCode::class)->last()->code;
-        $second = $service->start('0000000001', str_repeat('y', 64));
+        $second = $service->start('0000000001', '+962790000001', str_repeat('y', 64));
         $secondCode = Notification::sent(new AnonymousNotifiable, IdentityVerificationCode::class)->last()->code;
 
         Notification::assertSentOnDemandTimes(IdentityVerificationCode::class, 2);
-        $this->assertInstanceOf(User::class, $service->complete($first->id, str_repeat('x', 64), $firstCode, self::Password));
-        $this->assertNull($service->complete($second->id, str_repeat('y', 64), $secondCode, self::Password));
+        $this->assertTrue($service->verifyCode($first->id, str_repeat('x', 64), $firstCode));
+        $this->assertTrue($service->verifyCode($second->id, str_repeat('y', 64), $secondCode));
+        $this->assertInstanceOf(User::class, $service->complete($first->id, str_repeat('x', 64), self::Password));
+        $this->assertNull($service->complete($second->id, str_repeat('y', 64), self::Password));
         $this->assertDatabaseCount('users', 1);
         $this->assertNotNull($second->fresh()->consumed_at);
     }
@@ -334,9 +339,9 @@ class NationalIdentityRegistrationTest extends TestCase
     {
         Notification::fake();
         $this->citizen();
-        $existing = User::factory()->create(['email' => 'citizen@example.test', 'name' => 'Existing administrator', 'is_admin' => true]);
+        $existing = User::factory()->create(['email' => 'citizen@example.test', 'name' => 'Existing administrator', 'is_admin' => true, 'national_id' => null, 'national_id_hash' => null]);
 
-        $this->post(route('register.identity'), ['national_id' => '0000000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => '0000000001', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
 
         Notification::assertNothingSent();
         $this->assertDatabaseCount('users', 1);
@@ -351,7 +356,7 @@ class NationalIdentityRegistrationTest extends TestCase
         $citizen = $this->citizen();
         $citizen->forceFill(['national_id' => '0000000002'])->save();
 
-        $this->post(route('register.identity'), ['national_id' => '0000000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => '0000000001', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
 
         Notification::assertNothingSent();
         $this->assertDatabaseCount('users', 0);
@@ -362,11 +367,11 @@ class NationalIdentityRegistrationTest extends TestCase
     {
         $this->citizen();
         Notification::shouldReceive('send')->once()->withArgs(function (AnonymousNotifiable $notifiable, IdentityVerificationCode $notification): bool {
-            return $notifiable->routes['mail'] === 'citizen@example.test';
+            return $notifiable->routes['sms'] === '+962790000001';
         })
             ->andThrow(new \RuntimeException('Mail unavailable'));
 
-        $this->post(route('register.identity'), ['national_id' => '0000000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => '0000000001', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
 
         $this->assertNotNull(IdentityRegistrationChallenge::query()->sole()->consumed_at);
         $this->assertDatabaseHas('audit_logs', ['event' => 'identity.delivery_failed']);
@@ -377,12 +382,12 @@ class NationalIdentityRegistrationTest extends TestCase
     {
         Notification::fake();
         $this->citizen('0000000001', ['full_name' => '<script>alert(1)</script>']);
-        $this->post(route('register.identity'), ['national_id' => '0000000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => '0000000001', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
         Notification::assertNothingSent();
         $this->assertDatabaseCount('users', 0);
         $this->assertDatabaseHas('audit_logs', ['event' => 'identity.registry_unavailable']);
         $this->mock(CitizenRegistry::class)->shouldReceive('lookup')->andThrow(new \RuntimeException('Registry unavailable'));
-        $this->post(route('register.identity'), ['national_id' => '0000000002', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => '0000000002', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
         Notification::assertNothingSent();
         $this->assertDatabaseCount('users', 0);
     }
@@ -406,9 +411,9 @@ class NationalIdentityRegistrationTest extends TestCase
     {
         Notification::fake();
         for ($attempt = 0; $attempt < 3; $attempt++) {
-            $this->post(route('register.identity'), ['national_id' => '0000000009', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+            $this->post(route('register.identity'), ['national_id' => '0000000009', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
         }
-        $this->post(route('register.identity'), ['national_id' => '0000000009', 'registry_consent' => '1'])->assertTooManyRequests();
+        $this->post(route('register.identity'), ['national_id' => '0000000009', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertTooManyRequests();
         $this->assertDatabaseCount('identity_registration_challenges', 3);
         Notification::assertNothingSent();
     }
@@ -433,7 +438,7 @@ class NationalIdentityRegistrationTest extends TestCase
         $citizen = new RegistryCitizen;
         $citizen->forceFill(array_replace([
             'national_id' => $nationalId, 'national_id_hash' => app(NationalIdentity::class)->fingerprint($nationalId, true),
-            'full_name' => 'أحمد الخطيب', 'email' => 'CITIZEN@EXAMPLE.TEST', 'governorate' => 'Amman', 'is_active' => true,
+            'full_name' => 'أحمد الخطيب', 'email' => 'CITIZEN@EXAMPLE.TEST', 'governorate' => 'Amman', 'mobile_number' => '+962790000001', 'is_active' => true,
         ], $changes))->save();
 
         return $citizen;
@@ -441,7 +446,7 @@ class NationalIdentityRegistrationTest extends TestCase
 
     private function start(string $nationalId = '0000000001'): string
     {
-        $this->post(route('register.identity'), ['national_id' => $nationalId, 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => $nationalId, 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
         Notification::assertSentOnDemand(IdentityVerificationCode::class);
         $notification = Notification::sent(new AnonymousNotifiable, IdentityVerificationCode::class)->last();
         $this->assertNotNull($notification);
@@ -449,9 +454,11 @@ class NationalIdentityRegistrationTest extends TestCase
         return $notification->code;
     }
 
-    /** @return array{code: string, password: string, password_confirmation: string} */
+    /** @return array{password: string, password_confirmation: string} */
     private function completion(string $code): array
     {
-        return ['code' => $code, 'password' => self::Password, 'password_confirmation' => self::Password];
+        $this->post(route('register.verify'), ['code' => $code]);
+
+        return ['password' => self::Password, 'password_confirmation' => self::Password];
     }
 }

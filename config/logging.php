@@ -51,6 +51,12 @@ return [
     */
 
     'channels' => [
+        'sms' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/sms.log'),
+            'level' => 'debug',
+            'replace_placeholders' => true,
+        ],
 
         'mail' => [
             'driver' => 'single',

@@ -11,10 +11,10 @@ class IdentityRegistrationChallenge extends Model
 
     protected $guarded = ['*'];
 
-    protected $hidden = ['registry_subject_id', 'national_id_hash', 'contact_hash', 'session_secret_hash', 'code_hash'];
+    protected $hidden = ['registry_subject_id', 'national_id_hash', 'mobile_hash', 'contact_hash', 'session_secret_hash', 'code_hash'];
 
     protected function casts(): array
     {
-        return ['attempts' => 'integer', 'expires_at' => 'datetime', 'consumed_at' => 'datetime'];
+        return ['attempts' => 'integer', 'expires_at' => 'datetime', 'verified_at' => 'datetime', 'consumed_at' => 'datetime'];
     }
 }

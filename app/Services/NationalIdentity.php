@@ -16,6 +16,19 @@ class NationalIdentity
         ]);
     }
 
+    public function normalizeMobile(#[\SensitiveParameter] string $mobile): string
+    {
+        $mobile = preg_replace('/[ ()-]/', '', $this->normalize($mobile));
+        if (str_starts_with($mobile, '07')) {
+            return '+962'.substr($mobile, 1);
+        }
+        if (str_starts_with($mobile, '00962')) {
+            return '+'.substr($mobile, 2);
+        }
+
+        return $mobile;
+    }
+
     public function fingerprint(#[\SensitiveParameter] string $value, bool $registry = false): string
     {
         $key = config($registry ? 'identity.registry_lookup_key' : 'identity.lookup_key');

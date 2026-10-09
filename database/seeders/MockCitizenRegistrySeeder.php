@@ -29,7 +29,7 @@ class MockCitizenRegistrySeeder extends Seeder
             $citizen = RegistryCitizen::query()->where('national_id_hash', $fingerprint)->first() ?? new RegistryCitizen;
             $citizen->forceFill([
                 'national_id_hash' => $fingerprint, 'national_id' => $nationalId, 'full_name' => $name,
-                'email' => $email, 'governorate' => $governorate, 'is_active' => $active,
+                'email' => $email, 'mobile_number' => '+96279000000'.substr($nationalId, -1), 'governorate' => $governorate, 'is_active' => $active,
             ])->save();
         }
     }

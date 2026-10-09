@@ -52,7 +52,8 @@ class AuthenticationSecurityTest extends TestCase
         $user = User::query()->where('email', 'citizen@example.com')->sole();
         $this->assertAuthenticatedAs($user);
         $this->assertFalse($user->is_admin);
-        $this->assertNotNull($user->email_verified_at);
+        $this->assertNull($user->email_verified_at);
+        $this->assertNotNull($user->mobile_verified_at);
         $this->assertNull($user->mfa_secret);
         $this->assertTrue(Hash::check(self::Password, $user->password));
         Notification::assertSentOnDemand(IdentityVerificationCode::class);
@@ -108,7 +109,10 @@ class AuthenticationSecurityTest extends TestCase
     #[DataProvider('invalidRegistrationInput')]
     public function test_registration_validates_verification_codes_and_passwords(array $changes, string $field): void
     {
-        $response = $this->post(route('register.store'), array_replace($this->registrationPayload(), $changes));
+        $payload = $this->registrationPayload();
+        $response = $field === 'code'
+            ? $this->post(route('register.verify'), $changes)
+            : $this->post(route('register.store'), array_replace($payload, $changes));
 
         $response->assertRedirectToRoute('register')->assertSessionHasErrors($field)
             ->assertSessionMissing('_old_input.password')->assertSessionMissing('_old_input.password_confirmation');
@@ -126,9 +130,8 @@ class AuthenticationSecurityTest extends TestCase
 
     public function test_registration_does_not_flash_array_values_into_text_fields(): void
     {
-        $response = $this->post(route('register.store'), array_replace($this->registrationPayload(), [
-            'code' => ['unexpected'],
-        ]));
+        $this->registrationPayload();
+        $response = $this->post(route('register.verify'), ['code' => ['unexpected']]);
 
         $response->assertSessionHasErrors('code')->assertSessionMissing('_old_input.code');
         $this->get(route('register'))->assertOk();
@@ -161,7 +164,7 @@ class AuthenticationSecurityTest extends TestCase
         ]);
         $oldSessionId = session()->getId();
 
-        $response = $this->post(route('login.store'), ['email' => $user->email, 'password' => self::Password]);
+        $response = $this->post(route('login.store'), ['national_id' => $user->national_id, 'password' => self::Password]);
 
         $response->assertRedirect('/')->assertSessionMissing('admin_mfa_verified')
             ->assertSessionMissing('auth.password_confirmed_at')->assertSessionMissing('admin_mfa_enrollment')
@@ -186,7 +189,7 @@ class AuthenticationSecurityTest extends TestCase
             'starts_at' => now()->subMinute(), 'ends_at' => now()->addDay(),
         ]);
 
-        $response = $this->post(route('login.store'), ['email' => $user->email, 'password' => self::Password]);
+        $response = $this->post(route('login.store'), ['national_id' => $user->national_id, 'password' => self::Password]);
 
         $response->assertRedirect('/');
         $this->assertAuthenticatedAs($user);
@@ -197,7 +200,7 @@ class AuthenticationSecurityTest extends TestCase
     {
         $user = User::factory()->unverified()->create(['password' => self::Password]);
 
-        $response = $this->post(route('login.store'), ['email' => $user->email, 'password' => self::Password]);
+        $response = $this->post(route('login.store'), ['national_id' => $user->national_id, 'password' => self::Password]);
 
         $response->assertRedirectToRoute('verification.notice');
         $this->assertAuthenticatedAs($user);
@@ -207,11 +210,11 @@ class AuthenticationSecurityTest extends TestCase
     {
         $user = User::factory()->create(['password' => self::Password]);
         for ($attempt = 0; $attempt < 5; $attempt++) {
-            $this->post(route('login.store'), ['email' => $user->email, 'password' => 'wrong-password'])
-                ->assertSessionHasErrors('email');
+            $this->post(route('login.store'), ['national_id' => $user->national_id, 'password' => 'wrong-password'])
+                ->assertSessionHasErrors('national_id');
         }
 
-        $response = $this->post(route('login.store'), ['email' => $user->email, 'password' => self::Password]);
+        $response = $this->post(route('login.store'), ['national_id' => $user->national_id, 'password' => self::Password]);
 
         $response->assertTooManyRequests();
         $this->assertGuest();
@@ -384,12 +387,12 @@ class AuthenticationSecurityTest extends TestCase
     {
         $user = User::factory()->create(['is_admin' => true, 'password' => self::Password]);
 
-        $this->post(route('login.store'), ['email' => $user->email, 'password' => self::Password])
+        $this->post(route('admin.login.store'), ['email' => $user->email, 'password' => self::Password])
             ->assertRedirectToRoute('mfa.setup');
         $this->post(route('logout'));
         $user->forceFill(['mfa_secret' => self::TotpSecret, 'mfa_confirmed_at' => now()])->save();
         $this->withSession(['admin_mfa_verified' => $user->id])
-            ->post(route('login.store'), ['email' => $user->email, 'password' => self::Password])
+            ->post(route('admin.login.store'), ['email' => $user->email, 'password' => self::Password])
             ->assertRedirectToRoute('mfa.challenge')->assertSessionMissing('admin_mfa_verified');
     }
 
@@ -604,8 +607,8 @@ class AuthenticationSecurityTest extends TestCase
         $this->travelTo(Carbon::createFromTimestampUTC(59));
         $user = $this->confirmedAdministrator();
         $user->forceFill(['password' => self::Password])->save();
-        $this->post(route('login.store'), ['email' => $user->email, 'password' => 'wrong-password']);
-        $this->post(route('login.store'), ['email' => $user->email, 'password' => self::Password]);
+        $this->post(route('admin.login.store'), ['email' => $user->email, 'password' => 'wrong-password']);
+        $this->post(route('admin.login.store'), ['email' => $user->email, 'password' => self::Password]);
         $this->post(route('mfa.verify'), ['code' => '287082']);
 
         $logs = AuditLog::query()->where('event', 'like', 'auth.%')->get();
@@ -637,20 +640,22 @@ class AuthenticationSecurityTest extends TestCase
         $this->actingAs($this->confirmedAdministrator())->get(route('mfa.challenge'))->assertOk()->assertViewIs('auth.mfa-challenge');
     }
 
-    /** @return array{code: string, password: string, password_confirmation: string} */
+    /** @return array{password: string, password_confirmation: string} */
     private function registrationPayload(): array
     {
         Notification::fake();
-        $citizen = new CitizenIdentity('0199c7ff-aaaa-7000-8000-000000000001', '0000000001', 'أحمد الخطيب', 'citizen@example.com', 'Amman');
+        $citizen = new CitizenIdentity('0199c7ff-aaaa-7000-8000-000000000001', '0000000001', 'أحمد الخطيب', 'citizen@example.com', 'Amman', '+962790000001');
         $this->mock(CitizenRegistry::class, function ($mock) use ($citizen): void {
             $mock->shouldReceive('lookup')->andReturn($citizen);
             $mock->shouldReceive('find')->andReturn($citizen);
         });
 
-        $this->post(route('register.identity'), ['national_id' => '0000000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
+        $this->post(route('register.identity'), ['national_id' => '0000000001', 'mobile_number' => '0790000001', 'registry_consent' => '1'])->assertRedirectToRoute('register');
         $code = Notification::sent(new AnonymousNotifiable, IdentityVerificationCode::class)->last()->code;
 
-        return ['code' => $code, 'password' => self::Password, 'password_confirmation' => self::Password];
+        $this->post(route('register.verify'), ['code' => $code])->assertRedirectToRoute('register')->assertSessionHasNoErrors();
+
+        return ['password' => self::Password, 'password_confirmation' => self::Password];
     }
 
     private function confirmedAdministrator(): User

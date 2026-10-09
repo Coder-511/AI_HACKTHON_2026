@@ -16,7 +16,7 @@ class SubmissionAccess
         $suspension = $restrictions->where('type', 'temporary_suspend')->sortByDesc('ends_at')->first();
         $state = $ban ? 'banned' : ($suspension ? 'temporarily_suspended' : 'active');
         $available = $ban ? null : $suspension?->ends_at;
-        $canSubmit = $state === 'active' && ! $user->is_admin && $user->hasVerifiedEmail();
+        $canSubmit = $state === 'active' && ! $user->is_admin && ($user->hasVerifiedEmail() || $user->hasVerifiedCitizenIdentity());
 
         return [
             'code' => $canSubmit ? 'submission_allowed' : 'submission_not_allowed',

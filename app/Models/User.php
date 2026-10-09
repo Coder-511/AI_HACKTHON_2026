@@ -13,7 +13,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 #[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token', 'mfa_secret', 'mfa_last_counter', 'national_id', 'national_id_hash', 'registry_subject_id', 'identity_verified_at'])]
+#[Hidden(['password', 'remember_token', 'mfa_secret', 'mfa_last_counter', 'national_id', 'national_id_hash', 'registry_subject_id', 'identity_verified_at', 'mobile_number', 'mobile_verified_at'])]
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
@@ -28,6 +28,8 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             'national_id' => 'encrypted',
+            'mobile_number' => 'encrypted',
+            'mobile_verified_at' => 'datetime',
             'identity_verified_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
@@ -36,6 +38,12 @@ class User extends Authenticatable implements MustVerifyEmail
             'mfa_confirmed_at' => 'datetime',
             'mfa_last_counter' => 'integer',
         ];
+    }
+
+    public function hasVerifiedCitizenIdentity(): bool
+    {
+        return $this->national_id_hash !== null && $this->identity_verified_at !== null
+            && $this->mobile_number !== null && $this->mobile_verified_at !== null;
     }
 
     public function restrictions(): HasMany

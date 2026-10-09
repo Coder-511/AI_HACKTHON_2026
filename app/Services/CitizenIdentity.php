@@ -10,5 +10,6 @@ readonly class CitizenIdentity
         #[\SensitiveParameter] public string $fullName,
         #[\SensitiveParameter] public string $email,
         public string $governorate,
+        #[\SensitiveParameter] public string $mobileNumber,
     ) {}
 }

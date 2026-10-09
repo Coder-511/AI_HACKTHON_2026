@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\AdminMfa;
+use App\Services\NationalIdentity;
 use App\Services\SecurityAudit;
 use Closure;
 use Illuminate\Auth\Events\PasswordReset;
@@ -40,26 +41,50 @@ class AuthController extends Controller implements HasMiddleware
 
     public function loginForm(): View
     {
-        return view('auth.login');
+        return view('auth.login', ['administratorLogin' => false]);
     }
 
-    public function login(Request $request): RedirectResponse
+    public function adminLoginForm(): View
+    {
+        return view('auth.login', ['administratorLogin' => true]);
+    }
+
+    public function login(Request $request, NationalIdentity $identity): RedirectResponse
+    {
+        if (is_string($request->input('national_id'))) {
+            $request->merge(['national_id' => $identity->normalize($request->input('national_id'))]);
+        }
+        $data = $this->validateInput($request, [
+            'national_id' => ['required', 'string', 'regex:/\\A[0-9]{10}\\z/'],
+            'email' => ['prohibited'],
+            'password' => ['required', 'string', 'max:128'],
+            'remember' => ['sometimes', 'boolean'],
+        ], 'login');
+        $fingerprint = $identity->fingerprint($data['national_id']);
+
+        return $this->authenticate($request, ['national_id_hash' => $fingerprint, 'password' => $data['password'], 'is_admin' => false], $fingerprint, 'national_id', 'login');
+    }
+
+    public function adminLogin(Request $request): RedirectResponse
     {
         $this->normalizeEmail($request);
         $data = $this->validateInput($request, [
             'email' => ['required', 'string', 'email', 'max:254'],
             'password' => ['required', 'string', 'max:128'],
             'remember' => ['sometimes', 'boolean'],
-        ], 'login');
-        $key = $this->limitAttempts($request, 'login', $data['email'], 'login', 'email');
+        ], 'admin.login');
 
-        if (! Auth::attempt(['email' => $data['email'], 'password' => $data['password']], $request->boolean('remember'))) {
+        return $this->authenticate($request, ['email' => $data['email'], 'password' => $data['password'], 'is_admin' => true], $data['email'], 'email', 'admin.login');
+    }
+
+    private function authenticate(Request $request, #[\SensitiveParameter] array $credentials, string $identifier, string $field, string $formRoute): RedirectResponse
+    {
+        $key = $this->limitAttempts($request, 'login', $identifier, $formRoute, $field);
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             $this->audit->record('auth.login_failed');
 
-            return redirect()->route('login')->withErrors(['email' => 'The provided credentials are incorrect.'])
-                ->withInput($request->only('email'));
+            return redirect()->route($formRoute)->withErrors([$field => 'The provided credentials are incorrect.']);
         }
-
         RateLimiter::clear($key);
         $this->renewAuthenticationSession($request);
         $user = $this->authenticatedUser($request);
@@ -314,7 +339,7 @@ class AuthController extends Controller implements HasMiddleware
 
     private function afterAuthentication(User $user): RedirectResponse
     {
-        if (! $user->hasVerifiedEmail()) {
+        if (! $user->hasVerifiedEmail() && ! $user->hasVerifiedCitizenIdentity()) {
             return redirect()->route('verification.notice');
         }
 

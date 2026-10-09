@@ -47,7 +47,7 @@ class DatabaseCitizenRegistry implements CitizenRegistry
 
         $email = Str::lower(trim($citizen->email));
         $data = ['subject_id' => $citizen->id, 'national_id' => $citizen->national_id, 'full_name' => $citizen->full_name,
-            'email' => $email, 'governorate' => $citizen->governorate];
+            'email' => $email, 'governorate' => $citizen->governorate, 'mobile_number' => $citizen->mobile_number];
 
         if (Validator::make($data, [
             'subject_id' => ['required', 'uuid'],
@@ -55,10 +55,11 @@ class DatabaseCitizenRegistry implements CitizenRegistry
             'full_name' => ['required', 'string', 'max:80', 'regex:/\\A[^\\p{C}<>]+\\z/u'],
             'email' => ['required', 'string', 'email', 'max:254', 'not_regex:/[\\r\\n]/'],
             'governorate' => ['required', Rule::in(config('moshkelti.governorates'))],
+            'mobile_number' => ['required', 'string', 'regex:/\\A\\+9627[0-9]{8}\\z/'],
         ])->fails() || ! hash_equals($citizen->national_id_hash, $this->identity->fingerprint($data['national_id'], true))) {
             throw new LogicException('The registry returned an invalid identity record.');
         }
 
-        return new CitizenIdentity($citizen->id, $data['national_id'], $data['full_name'], $email, $data['governorate']);
+        return new CitizenIdentity($citizen->id, $data['national_id'], $data['full_name'], $email, $data['governorate'], $data['mobile_number']);
     }
 }

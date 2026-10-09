@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CompleteIdentityRegistrationRequest;
 use App\Http\Requests\StartIdentityRegistrationRequest;
+use App\Http\Requests\VerifyIdentityCodeRequest;
 use App\Models\IdentityRegistrationChallenge;
 use App\Services\RegistryRegistration;
 use Closure;
@@ -31,7 +32,11 @@ class IdentityRegistrationController extends Controller implements HasMiddleware
 
     public function create(Request $request): View
     {
-        return view('auth.register', ['challengePending' => is_string($request->session()->get('identity_registration.id'))]);
+        $challenge = $request->session()->get('identity_registration');
+        $stage = is_array($challenge) && is_string($challenge['id'] ?? null) && is_string($challenge['secret'] ?? null)
+            ? $this->registration->stage($challenge['id'], $challenge['secret']) : 'identity';
+
+        return view('auth.register', ['stage' => $stage]);
     }
 
     public function start(StartIdentityRegistrationRequest $request): RedirectResponse
@@ -45,17 +50,27 @@ class IdentityRegistrationController extends Controller implements HasMiddleware
 
         $secret = Str::random(64);
         $request->session()->regenerate();
-        $challenge = $this->registration->start($request->validated('national_id'), $secret);
+        $challenge = $this->registration->start($request->validated('national_id'), $request->validated('mobile_number'), $secret);
         $request->session()->put('identity_registration', ['id' => $challenge->id, 'secret' => $secret]);
 
-        return redirect()->route('register')->with('status', 'If this ID is eligible, a verification code was sent to its registered email. The code expires in five minutes.');
+        return redirect()->route('register')->with('status', 'If the ID and mobile match an eligible registry record, an SMS verification code was requested. It expires in five minutes. Local SMS is simulated.');
+    }
+
+    public function verify(VerifyIdentityCodeRequest $request): RedirectResponse
+    {
+        $challenge = $request->session()->get('identity_registration');
+        $verified = is_array($challenge) && is_string($challenge['id'] ?? null) && is_string($challenge['secret'] ?? null)
+            && $this->registration->verifyCode($challenge['id'], $challenge['secret'], $request->validated('code'));
+
+        return $verified ? redirect()->route('register')->with('status', 'Mobile verified. Choose your password within five minutes.')
+            : redirect()->route('register')->withErrors(['code' => 'The verification code is invalid, expired, or no longer available.']);
     }
 
     public function store(CompleteIdentityRegistrationRequest $request): RedirectResponse
     {
         $challenge = $request->session()->get('identity_registration');
         $user = is_array($challenge) && is_string($challenge['id'] ?? null) && is_string($challenge['secret'] ?? null)
-            ? $this->registration->complete($challenge['id'], $challenge['secret'], $request->validated('code'), $request->validated('password')) : null;
+            ? $this->registration->complete($challenge['id'], $challenge['secret'], $request->validated('password')) : null;
 
         if (! $user) {
             return redirect()->route('register')->withErrors(['registration' => 'Unable to verify registration. Check the code or request a new one.']);
@@ -65,6 +80,6 @@ class IdentityRegistrationController extends Controller implements HasMiddleware
         $request->session()->regenerate();
         $request->session()->forget(['identity_registration', 'admin_mfa_verified', 'admin_mfa_enrollment', 'auth.password_confirmed_at', 'url.intended']);
 
-        return redirect()->route('home')->with('status', 'Your citizen account is verified. Sign in next time using the email held in the registry and your password.');
+        return redirect()->route('home')->with('status', 'Your citizen account is verified. Sign in using your national ID and password.');
     }
 }

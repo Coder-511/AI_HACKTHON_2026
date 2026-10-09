@@ -28,6 +28,7 @@ class SecurityReadiness extends Command
             'Durable queue' => config('queue.default') !== 'sync',
             'Configured malware scanner' => is_file((string) config('moshkelti.scanner_binary')),
             'Real email transport' => ! in_array(config('mail.default'), ['log', 'array'], true),
+            'Approved SMS provider (not local simulation)' => false,
             'Approved identity provider (mock is local only)' => config('identity.driver') !== 'mock_database' && ! (app(CitizenRegistry::class) instanceof DatabaseCitizenRegistry),
             'Identity lookup key configured' => strlen((string) config('identity.lookup_key')) >= 32,
         ];
