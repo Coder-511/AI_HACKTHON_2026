@@ -35,6 +35,9 @@ class SecurityReadiness extends Command
         if (config('moshkelti.ai_driver') === 'remote') {
             $checks['AI allowlist and credential configured'] = (bool) config('moshkelti.ai_host') && (bool) config('moshkelti.ai_token') && (bool) config('moshkelti.ai_endpoint');
         }
+        if (config('moshkelti.ai_driver') === 'gemini') {
+            $checks['Gemini credential configured'] = (bool) config('moshkelti.gemini_api_key');
+        }
         foreach ($checks as $name => $passed) {
             $passed ? $this->info('PASS '.$name) : $this->warn('BLOCK '.$name);
         }

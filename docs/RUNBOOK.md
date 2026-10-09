@@ -82,6 +82,16 @@ Retention is a preview by default, including the scheduled daily command. Only a
 
 ## Optional external AI
 
+### Gemini text analysis
+
+The local workspace is configured for `MOSHKELTI_AI_DRIVER=gemini`. Add your private `GEMINI_API_KEY` to the ignored `.env` file, never to chat or source control. The default model is `gemini-3.8-flash`, configurable through `GEMINI_MODEL`. This adapter uses Google's generateContent REST API directly; no new Composer package is needed. Obtain a key from Google AI Studio and verify model access and billing before use.
+
+After changing configuration, run `php artisan config:clear` and restart the queue worker with `php artisan queue:work --tries=3 --timeout=60`. Select the optional external-analysis consent checkbox when submitting a new report. Existing reports are not automatically resubmitted to Google; consent is never retroactively assumed.
+
+Only bounded, best-effort-redacted report text and coarse category/governorate are sent. Photos, exact coordinates, account identity and national ID are not sent. This release does not perform image inference. Emergency and personal-service keyword safeguards still run locally first. Declined consent or an exhausted daily budget uses local triage; provider failure, missing credentials, blocked or invalid output goes to human review. Gemini never approves, publishes, bans, or dispatches.
+
+Use synthetic reports until the provider data-processing arrangements are approved. Google distinguishes paid and unpaid service data use; do not send private citizen data on an unpaid tier. Text redaction cannot guarantee anonymization. No real provider request has been verified without an operator-supplied key.
+
 Default `MOSHKELTI_AI_DRIVER=local` is a deterministic Arabic/English keyword classifier, not a trained model. Attachments are evidence for human reviewers; no OCR or computer-vision inference is claimed.
 
 The optional `remote` adapter is an integration boundary, not a configured provider SDK. It requires an operator-approved HTTPS JSON classification service, an exact approved DNS host, a token, and explicit report consent. Configure `MOSHKELTI_AI_ENDPOINT`, `MOSHKELTI_AI_HOST` and `MOSHKELTI_AI_TOKEN` only after verifying the provider contract and response schema in `AnalysisValidator`. It is not directly compatible with every vendor's API.

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Cache;
 
 class ReportAnalyzer
 {
-    public function __construct(private LocalAnalyzer $local, private RemoteAnalyzer $remote, private AnalysisValidator $validator) {}
+    public function __construct(private LocalAnalyzer $local, private RemoteAnalyzer $remote, private AnalysisValidator $validator, private GeminiAnalyzer $gemini) {}
 
     public function analyze(Report $report): array
     {
@@ -22,7 +22,7 @@ class ReportAnalyzer
         $driver = 'local';
         $result = $this->local->analyze($context);
         // A remote recommendation cannot override deterministic emergency/service guidance.
-        if (config('moshkelti.ai_driver') === 'remote' && $report->external_ai_consent
+        if (in_array(config('moshkelti.ai_driver'), ['remote', 'gemini'], true) && $report->external_ai_consent
             && ! in_array($result['classification'], ['emergency', 'personal_service'], true)) {
             $allowed = Cache::lock('moshkelti-ai-budget-lock', 10)->block(3, function (): bool {
                 $key = 'moshkelti-ai-cost:'.now()->toDateString();
@@ -35,8 +35,8 @@ class ReportAnalyzer
                 return true;
             });
             if ($allowed) {
-                $driver = 'remote';
-                $result = $this->remote->analyze($context);
+                $driver = config('moshkelti.ai_driver');
+                $result = $driver === 'gemini' ? $this->gemini->analyze($context) : $this->remote->analyze($context);
             } else {
                 app(SecurityAudit::class)->record('ai.budget_exhausted', null, $report);
             }
