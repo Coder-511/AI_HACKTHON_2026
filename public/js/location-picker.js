@@ -109,6 +109,24 @@
         render();
     }));
     picker.querySelector('[data-map-select]').addEventListener('click', () => select(centre));
+    const locationButton = picker.querySelector('[data-map-location]');
+    if (locationButton && window.isSecureContext && navigator.geolocation) {
+        locationButton.hidden = false;
+        locationButton.addEventListener('click', () => {
+            locationButton.disabled = true;
+            status.textContent = choose('جارٍ تحديد الموقع بإذنك. استخدمه فقط إذا كنت عند مكان المشكلة.', 'Finding your location with permission. Use it only if you are at the issue.');
+            navigator.geolocation.getCurrentPosition(position => {
+                locationButton.disabled = false;
+                const point = [position.coords.latitude, position.coords.longitude];
+                if (valid(...point)) { centre = point; zoom = 15; }
+                select(point);
+            }, () => {
+                locationButton.disabled = false;
+                status.textContent = choose('تعذر الحصول على الموقع أو لم تسمح بمشاركته. اختر المكان على الخريطة أو أدخل الإحداثيات يدوياً.', 'Location is unavailable or permission was denied. Select the map location or enter coordinates manually.');
+                if (!loaded) { manual.open = true; }
+            }, {enableHighAccuracy: false, timeout: 15000, maximumAge: 0});
+        });
+    }
     map.addEventListener('pointerdown', event => {
         if (!event.isPrimary || event.button !== 0) { return; }
         drag = {id: event.pointerId, x: event.clientX, y: event.clientY};

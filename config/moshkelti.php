@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'citizen_only' => (bool) env('MOSHKELTI_CITIZEN_ONLY', false),
+    'citizen_origin' => env('MOSHKELTI_CITIZEN_ORIGIN', ''),
     'municipality' => 'Amman pilot municipality',
     'categories' => ['roads' => 'Roads / الطرق', 'lighting' => 'Lighting / الإنارة', 'waste' => 'Waste / النفايات', 'drainage' => 'Drainage / الصرف الصحي', 'public_facilities' => 'Public facilities / المرافق العامة'],
     'governorates' => ['Amman', 'Irbid', 'Zarqa', 'Balqa', 'Madaba', 'Jerash', 'Ajloun', 'Mafraq', 'Karak', 'Tafilah', 'Maan', 'Aqaba'],

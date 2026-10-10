@@ -4,22 +4,37 @@ The implemented pilot uses Laravel 13, PHP, MySQL-compatible MariaDB, Blade, and
 
 ## Already configured in this workspace
 
-- XAMPP MariaDB is listening on 127.0.0.1:3306.
+- XAMPP supplies MariaDB, configured for this pilot's loopback `127.0.0.1:3306` connection. It must be started separately; serving Laravel does not start it.
 - The dedicated `moshkelti` database has been migrated and seeded with five simulated Amman departments and one clearly labelled pilot news item.
 - The ignored `.env` uses `moshkelti_runtime`, with a generated password and only SELECT, INSERT, UPDATE and DELETE grants on this database.
 - No administrator or default citizen password was seeded. The old SQLite database was not erased.
-- The local web server is available at http://127.0.0.1:8000 while the started process remains running.
+- The local desktop site is available on port 8000 only while its process runs. Use the host in `APP_URL` consistently (this workspace uses `http://localhost:8000`).
+- The citizen APK uses a separate HTTPS origin on the PC Wi-Fi address, port 8443. See [ANDROID_PILOT.md](ANDROID_PILOT.md); its proxy forwards to loopback 8001 and never exposes desktop administration.
 
 ## Run locally
 
 From the project root, in separate PowerShell terminals:
 
 ```powershell
-php artisan serve --host=127.0.0.1 --port=8000
-php artisan queue:work --tries=3 --timeout=60
+Push-Location public
+php -d upload_max_filesize=5M -d post_max_size=16M -S 127.0.0.1:8000 -t . ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
+Pop-Location
+```
+
+In separate terminals at the project root:
+
+```powershell
+php artisan queue:work database --queue=default --sleep=2 --tries=3 --timeout=40 --no-interaction
+php artisan schedule:work --no-interaction
 ```
 
 If port 8000 is already serving this app, do not start another server. Keep the queue worker running; submissions return immediately and analysis runs asynchronously. Queue retry-after is 90 seconds; the worker timeout must remain lower.
+
+The development router uses process-only upload limits consistent with Laravel's three-image,
+5 MB-per-image validation. Do not expose this PHP server or the database to Wi-Fi; only the
+scoped citizen HTTPS proxy belongs on the network. Windows lacks PCNTL timeout alarms;
+the AI adapter also enforces bounded HTTP timeouts. Stop foreground processes with Ctrl+C;
+stop background processes only after verifying their identity and letting jobs finish.
 
 Create your own administrator interactively:
 
@@ -64,7 +79,7 @@ php artisan db:seed --database=registry --class=MockCitizenRegistrySeeder --no-i
 Remove-Item Env:REGISTRY_DB_USERNAME, Env:REGISTRY_DB_PASSWORD
 ```
 
-Seeding is local/testing-only and creates no application accounts or default passwords. Run `php artisan schedule:work` locally for expired challenge cleanup. The current XAMPP table-level grant table reported damage during setup; it was not repaired. The registry's database-scoped SELECT-only grant works and write denial was verified. A database operator should inspect/repair the installation before production.
+Seeding is local/testing-only and creates no application accounts or default passwords. Run `php artisan schedule:work` locally for expired challenge cleanup. During the 2026-10-10 check, read-only table checks returned OK for both pilot databases and the previously problematic `mysql.tables_priv` table; startup reached ready-for-connections without Aria recovery errors. This is not a backup/restore test or production database certification. The registry's database-scoped SELECT-only grant works and write denial was previously verified.
 
 ## Verification and operations
 
@@ -86,11 +101,11 @@ Retention is a preview by default, including the scheduled daily command. Only a
 
 The local workspace is configured for `MOSHKELTI_AI_DRIVER=gemini`. Add your private `GEMINI_API_KEY` to the ignored `.env` file, never to chat or source control. The default model is `gemini-3.8-flash`, configurable through `GEMINI_MODEL`. This adapter uses Google's generateContent REST API directly; no new Composer package is needed. Obtain a key from Google AI Studio and verify model access and billing before use.
 
-After changing configuration, run `php artisan config:clear` and restart the queue worker with `php artisan queue:work --tries=3 --timeout=60`. Select the optional external-analysis consent checkbox when submitting a new report. Existing reports are not automatically resubmitted to Google; consent is never retroactively assumed.
+After changing configuration, run `php artisan config:clear` and restart the queue worker with `php artisan queue:work database --queue=default --sleep=2 --tries=3 --timeout=40 --no-interaction`. Select the optional external-analysis consent checkbox when submitting a new report. Existing reports are not automatically resubmitted to Google; consent is never retroactively assumed.
 
 Only bounded, best-effort-redacted report text and coarse category/governorate are sent. Photos, exact coordinates, account identity and national ID are not sent. This release does not perform image inference. Emergency and personal-service keyword safeguards still run locally first. Declined consent or an exhausted daily budget uses local triage; provider failure, missing credentials, blocked or invalid output goes to human review. Gemini never approves, publishes, bans, or dispatches.
 
-Use synthetic reports until the provider data-processing arrangements are approved. Google distinguishes paid and unpaid service data use; do not send private citizen data on an unpaid tier. Text redaction cannot guarantee anonymization. No real provider request has been verified without an operator-supplied key.
+Use synthetic reports until the provider data-processing arrangements are approved. Google distinguishes paid and unpaid service data use; do not send private citizen data on an unpaid tier. Text redaction cannot guarantee anonymization. A configured key alone does not prove model access: inspect the recorded driver and validation state on a consented report. Regression tests fake provider calls and do not verify live billing or quotas.
 
 Default `MOSHKELTI_AI_DRIVER=local` is a deterministic Arabic/English keyword classifier, not a trained model. Attachments are evidence for human reviewers; no OCR or computer-vision inference is claimed.
 

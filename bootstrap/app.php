@@ -1,11 +1,14 @@
 <?php
 
+use App\Http\Middleware\CitizenOnly;
+use App\Http\Middleware\CitizenOrigin;
 use App\Http\Middleware\RecentPassword;
 use App\Http\Middleware\RequireAdmin;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\SubmissionAllowed;
 use App\Services\SecurityAudit;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -21,9 +24,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->appendToGroup('web', CitizenOnly::class);
         $middleware->appendToGroup('web', SetLocale::class);
+        $middleware->append(CitizenOrigin::class);
         $middleware->append(SecurityHeaders::class);
         $middleware->trustHosts(at: fn () => ['^'.preg_quote((string) parse_url(config('app.url'), PHP_URL_HOST), '/').'$'], subdomains: false);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, CitizenOnly::class);
         $middleware->prependToPriorityList(ThrottleRequests::class, SubmissionAllowed::class);
         $middleware->alias([
             'submission' => SubmissionAllowed::class,
@@ -37,6 +43,10 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
         $exceptions->respond(function (Response $response): Response {
+            if (config('moshkelti.citizen_only')) {
+                $response->headers->set('Cache-Control', 'no-store, private');
+                $response->headers->set('X-Content-Type-Options', 'nosniff');
+            }
             if (in_array($response->getStatusCode(), [403, 419, 429], true)) {
                 try {
                     $event = [403 => 'security.access_denied', 419 => 'security.request_forgery_blocked', 429 => 'security.rate_limited'][$response->getStatusCode()];

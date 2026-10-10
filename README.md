@@ -6,6 +6,11 @@ A bilingual civic-reporting pilot for Jordan. Citizens document public infrastru
 
 ## Contents
 
+Citizen-only Android pilot: [setup, signed builds and safe shutdown](docs/ANDROID_PILOT.md).
+The Android client reuses Laravel's citizen workflow; desktop administration remains separate.
+Local client source is in `android/`; in the [private Android repository](https://github.com/Coder-511/moshkelti-citizen-android-pilot),
+those contents are at the root, with Java code under `app/src/main/java/jo/moshkelti/citizen/`.
+
 - [Features and boundaries](#features-and-boundaries)
 - [Technology](#technology)
 - [Local setup on Windows](#local-setup-on-windows)
@@ -151,10 +156,19 @@ Do not use `migrate:fresh` on an existing installation: it deletes tables and th
 In one terminal:
 
 ```powershell
-php artisan serve --host=localhost --port=8000 --no-interaction
+Push-Location public
+php -d upload_max_filesize=5M -d post_max_size=16M -S 127.0.0.1:8000 -t . ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
+Pop-Location
 ```
 
 Open `http://localhost:8000`. Keep `APP_URL` aligned with the host/port you actually use; use that same host consistently for sessions and signed attachment links.
+
+The `public/` working directory is required by Laravel's bundled development router.
+This sets upload limits for this process
+only: 5 MB per file and 16 MB per request, consistent with the citizen server. PHP defaults
+may be lower than the app's limits. `artisan serve` is also supported when the PHP server
+configuration already has sufficient upload limits; command-line `-d` options on its parent
+process do not automatically propagate to its child server. Neither command starts the database.
 
 In a **second terminal**, from the same project directory:
 
@@ -163,6 +177,11 @@ php artisan queue:work database --queue=default --sleep=2 --tries=3 --timeout=40
 ```
 
 The worker processes report analysis, database notifications, and simulated delivery. Serving pages alone does not process these jobs. Job-specific retry settings still apply. HTTP provider timeouts bound AI calls; production worker supervision is still required, and process timeout behavior differs on Windows without PCNTL.
+
+The database queue's default reservation is 90 seconds; keep job/worker timeouts below it.
+Run only one shared pilot worker unless deliberately testing concurrency. For scheduled
+OTP cleanup and retention previews, use `php artisan schedule:work --no-interaction` in
+another terminal. The scheduler does not enable retention erasure.
 
 Stop each foreground process with `Ctrl+C`. After changing worker code or environment configuration, stop and start the local worker. In a supervised environment, `queue:restart` requests a graceful exit and the supervisor must start it again.
 
@@ -355,6 +374,8 @@ php artisan moshkelti:retention --apply --no-interaction
 | `database/migrations/registry` | Separate synthetic-registry schema |
 | `app/Console/Commands`, `routes/console.php` | Operator commands and scheduled maintenance |
 | `tests/Feature`, `tests/Unit` | Regression and security tests |
+| `android/` | Citizen-only Android client, URL-policy tests and remote signed-build workflow |
+| `docs/ANDROID_PILOT.md`, `docs/*Citizen*.ps1` | Isolated HTTPS citizen setup, network access, client export and shutdown |
 
 Application tables include users/restrictions, reports/attachments/events/analyses, authority units/dispatch outboxes, appeals, news, privacy requests, audit logs, identity challenges, notifications, and Laravel sessions/cache/jobs. `registry_citizens` lives in the separate registry database.
 
@@ -401,7 +422,7 @@ composer audit
 
 The default suite uses isolated in-memory SQLite, fake storage/notifications, and controlled external adapters where appropriate. If configuring MySQL integration tests, use a dedicated `moshkelti_test_*` database; the test bootstrap rejects other MySQL application database names. Never point tests or synthetic registry seeders at real citizen data.
 
-At the **2026-10-10 audit**, the suite passed **284 tests / 1,734 assertions**, 126 PHP files passed syntax checks, Blade templates compiled, and Composer reported no known dependency advisories. These are a dated verification snapshot, not a permanent security certification. Browser-device visual testing and production database/infrastructure validation remain separate checks.
+At the **2026-10-10 audit**, the suite passed **301 tests / 1,833 assertions**, including the isolated citizen surface. Composer found no known dependency advisories and installed platform requirements passed. The private Android CI passed URL-policy tests, release lint, compilation and APK-signature verification. These are a dated verification snapshot, not a permanent security certification. Physical-phone visual testing, Wi-Fi reachability and production infrastructure validation remain separate checks.
 
 ## Production readiness
 

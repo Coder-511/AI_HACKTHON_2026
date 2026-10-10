@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">مشكلتي — نسخة المواطن التجريبية</string>
+    <string name="connection_error">تعذر الاتصال الآمن. تحقق من تشغيل خادم الحاسوب وشبكة الواي فاي وشهادة النسخة التجريبية. لا يُسمح باتصال غير آمن.</string>
+    <string name="retry">حاول مجدداً</string>
+    <string name="location_denied">لم تتم مشاركة موقعك. يمكنك تحديد المكان على الخريطة.</string>
+    <string name="invalid_upload">اختر حتى ثلاث صور JPEG أو PNG أو WebP، بحجم لا يتجاوز 5 ميغابايت لكل صورة.</string>
+    <string name="blocked_link">هذا الرابط غير مسموح به في تطبيق المواطن.</string>
+</resources>

@@ -1,0 +1,102 @@
+name: Signed citizen pilot APK
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: citizen-pilot-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CITIZEN_ORIGIN: ${{ vars.CITIZEN_ORIGIN }}
+      APK_VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - name: Check out Android-only project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject unexpected repository contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f app/src/main/AndroidManifest.xml
+          for path in .env artisan composer.json composer.lock vendor storage bootstrap database routes; do
+            test ! -e "$path" || { echo "Forbidden backend content in client repository"; exit 1; }
+          done
+          if git ls-files | grep -E '(^|/)(\.env[^/]*|[^/]*\.(jks|keystore|key|p12|sql|log))$'; then
+            echo "Forbidden secrets or backend data in client repository"; exit 1
+          fi
+      - name: Use runner JDK 17
+        shell: bash
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+      - name: Set up pinned Gradle remotely
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          gradle-version: '8.13'
+          cache-disabled: true
+          dependency-graph: disabled
+      - name: Install only remote SDK platform and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;35.0.0' > /dev/null
+      - name: Load public CA and signing material from protected environment
+        shell: bash
+        env:
+          PILOT_CA_BASE64: ${{ vars.PILOT_CA_BASE64 }}
+          SIGNING_STORE_BASE64: ${{ secrets.SIGNING_STORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$CITIZEN_ORIGIN" && test -n "$PILOT_CA_BASE64"
+          test -n "$SIGNING_STORE_BASE64" && test -n "$SIGNING_STORE_PASSWORD"
+          test -n "$SIGNING_KEY_ALIAS" && test -n "$SIGNING_KEY_PASSWORD"
+          printf '%s' "$PILOT_CA_BASE64" | base64 --decode > "$RUNNER_TEMP/pilot-ca.pem"
+          printf '%s' "$SIGNING_STORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pilot-signing.jks"
+          ! grep -q 'PRIVATE KEY' "$RUNNER_TEMP/pilot-ca.pem"
+          openssl x509 -in "$RUNNER_TEMP/pilot-ca.pem" -noout -checkend 86400
+          # Windows PKCS12 exports may name only the certificate bag. Normalize both
+          # bag aliases without writing an unencrypted private key to disk or logs.
+          openssl pkcs12 -in "$RUNNER_TEMP/pilot-signing.jks" -nodes -passin env:SIGNING_STORE_PASSWORD |
+            openssl pkcs12 -export -name "$SIGNING_KEY_ALIAS" -passout env:SIGNING_STORE_PASSWORD -out "$RUNNER_TEMP/pilot-signing.p12"
+          echo "PUBLIC_CA_FILE=$RUNNER_TEMP/pilot-ca.pem" >> "$GITHUB_ENV"
+          echo "SIGNING_STORE_FILE=$RUNNER_TEMP/pilot-signing.p12" >> "$GITHUB_ENV"
+      - name: Run URL security tests, lint and release build
+        shell: bash
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: gradle --no-daemon testReleaseUnitTest lintRelease assembleRelease
+      - name: Verify APK signature and record checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          cd app/build/outputs/apk/release
+          sha256sum app-release.apk > app-release.apk.sha256
+      - name: Publish only signed APK and checksum
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: moshkelti-citizen-pilot-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release.apk.sha256
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: rm -f -- "$RUNNER_TEMP/pilot-signing.jks" "$RUNNER_TEMP/pilot-signing.p12" "$RUNNER_TEMP/pilot-ca.pem"

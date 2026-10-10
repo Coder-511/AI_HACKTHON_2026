@@ -24,7 +24,7 @@
     <div class="form-actions">
         <a href="{{ route('password.request') }}" class="text-link"><span lang="ar">استعادة كلمة المرور بالبريد المسجل</span><span lang="en">Recover password using registry email</span></a>
         <a href="{{ route('register') }}" class="text-link"><span lang="ar">إنشاء حساب</span><span lang="en">Create an account</span></a>
-        @unless($administratorLogin)<a href="{{ route('admin.login') }}">{{ __('Administrator sign in') }}</a>@endunless
+        @unless($administratorLogin || config('moshkelti.citizen_only'))<a href="{{ route('admin.login') }}">{{ __('Administrator sign in') }}</a>@endunless
     </div>
 </section>
 @endsection

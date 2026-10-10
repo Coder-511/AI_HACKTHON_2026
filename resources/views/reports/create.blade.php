@@ -24,6 +24,7 @@
                 <p id="location-help" class="field-help"><span lang="ar">حدد مكان المشكلة وليس منزلك. اضغط تحميل الخريطة ثم انقر لوضع العلامة. اسحب للتحريك واستخدم أزرار التكبير. لا يُنشر الموقع الدقيق للعامة.</span><span lang="en">Select the issue location, not your home. Load the map, then tap to place a pin. Drag to pan and use the zoom buttons. Exact coordinates are not public.</span></p>
                 <p class="field-help"><span lang="ar">تحميل الخريطة يرسل عنوان IP والمنطقة المعروضة إلى OpenStreetMap، وليس بيانات حسابك أو نص البلاغ.</span><span lang="en">Loading the map shares your IP address and viewed area with OpenStreetMap, not your account details or report text.</span></p>
                 <div class="actions" data-map-controls hidden>
+                    <button type="button" class="button button-secondary button-small" data-map-location hidden><span lang="ar">استخدم موقعي الحالي</span><span lang="en">Use my current location</span></button>
                     <button type="button" class="button button-secondary button-small" data-map-load><span lang="ar">تحميل الخريطة</span><span lang="en">Load map</span></button>
                     <button type="button" class="button button-secondary button-small" data-map-zoom="1" disabled><span lang="ar">تكبير +</span><span lang="en">Zoom in +</span></button>
                     <button type="button" class="button button-secondary button-small" data-map-zoom="-1" disabled><span lang="ar">تصغير −</span><span lang="en">Zoom out −</span></button>

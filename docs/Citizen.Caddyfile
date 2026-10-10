@@ -1,0 +1,31 @@
+{
+	admin 127.0.0.1:2021
+	auto_https disable_redirects
+	skip_install_trust
+	storage file_system {
+		root {$PILOT_DATA}
+	}
+	servers {
+		protocols h1 h2
+	}
+	grace_period 10s
+}
+
+https://{$CITIZEN_HOST}:8443 {
+	bind {$CITIZEN_HOST}
+	tls internal
+	request_body {
+		max_size 16MB
+	}
+	@administration path /admin /admin/*
+	respond @administration 404
+	reverse_proxy 127.0.0.1:8001 {
+		header_up Host {$CITIZEN_HOST}:8443
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Port 8443
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 30s
+		}
+	}
+}

@@ -102,7 +102,7 @@ class ReportController extends Controller
             $report->load(['events', 'attachments']);
             foreach ($report->attachments as $attachment) {
                 if ($attachment->isSafeForDownload()) {
-                    $urls[$attachment->id] = URL::temporarySignedRoute('attachments.download', now()->addMinutes(5), ['attachment' => $attachment->id]);
+                    $urls[$attachment->id] = URL::temporarySignedRoute(config('moshkelti.citizen_only') ? 'attachments.preview' : 'attachments.download', now()->addMinutes(5), ['attachment' => $attachment->id]);
                 }
             }
         }

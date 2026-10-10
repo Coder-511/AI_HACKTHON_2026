@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Moshkelti — Citizen pilot</string>
+    <string name="connection_error">Cannot connect securely. Check the PC server, Wi-Fi, and pilot certificate. No insecure connection is allowed.</string>
+    <string name="retry">Try again</string>
+    <string name="location_denied">Location was not shared. You can select a location on the map.</string>
+    <string name="invalid_upload">Select up to three JPEG, PNG, or WebP images, no larger than 5 MB each.</string>
+    <string name="blocked_link">This link is not permitted in the citizen app.</string>
+</resources>

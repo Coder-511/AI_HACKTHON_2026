@@ -1,0 +1,67 @@
+plugins { id 'com.android.application' }
+
+def origin = System.getenv('CITIZEN_ORIGIN') ?: ''
+if (!(origin ==~ /https:\/\/(10\.[0-9.]+|192\.168\.[0-9.]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9.]+):8443/)) {
+    throw new GradleException('CITIZEN_ORIGIN must be a private IPv4 HTTPS origin on port 8443, without a trailing slash.')
+}
+def serverUri = new URI(origin)
+if (serverUri.host == null || serverUri.host.split(/\./).length != 4 || serverUri.host.split(/\./).any { it.toInteger() > 255 }) {
+    throw new GradleException('Invalid pilot IPv4 address.')
+}
+def ca = new File(System.getenv('PUBLIC_CA_FILE') ?: '/missing-public-ca')
+if (!ca.isFile() || ca.length() > 16384 || !ca.text.contains('BEGIN CERTIFICATE') || ca.text.contains('PRIVATE KEY')) {
+    throw new GradleException('Provide PUBLIC_CA_FILE containing only the public pilot CA certificate.')
+}
+def generatedTrust = layout.buildDirectory.dir('generated/pilotTrust')
+def generateTrust = tasks.register('generatePilotTrust') {
+    inputs.file(ca)
+    inputs.property('pilotHost', serverUri.host)
+    outputs.dir(generatedTrust)
+    doLast {
+        def dir = generatedTrust.get().asFile
+        new File(dir, 'raw').mkdirs()
+        new File(dir, 'xml').mkdirs()
+        new File(dir, 'raw/pilot_ca.pem').bytes = ca.bytes
+        new File(dir, 'xml/network_security_config.xml').text = """<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false"><trust-anchors><certificates src="system"/></trust-anchors></base-config>
+  <domain-config cleartextTrafficPermitted="false">
+    <domain includeSubdomains="false">${serverUri.host}</domain>
+    <trust-anchors><certificates src="@raw/pilot_ca"/></trust-anchors>
+  </domain-config>
+</network-security-config>
+"""
+    }
+}
+
+android {
+    namespace 'jo.moshkelti.citizen'
+    compileSdk 36
+    buildToolsVersion '35.0.0'
+    defaultConfig {
+        applicationId 'jo.moshkelti.citizen.pilot'
+        minSdk 26
+        targetSdk 36
+        versionCode Integer.parseInt(System.getenv('APK_VERSION_CODE') ?: '1')
+        versionName '0.1.' + versionCode
+        buildConfigField 'String', 'CITIZEN_ORIGIN', '"' + origin + '"'
+    }
+    signingConfigs {
+        pilot {
+            storeType 'PKCS12'
+            storeFile file(System.getenv('SIGNING_STORE_FILE') ?: '/missing-signing-store')
+            storePassword System.getenv('SIGNING_STORE_PASSWORD')
+            keyAlias System.getenv('SIGNING_KEY_ALIAS')
+            keyPassword System.getenv('SIGNING_KEY_PASSWORD')
+        }
+    }
+    buildTypes {
+        release { signingConfig signingConfigs.pilot; debuggable false; minifyEnabled false }
+    }
+    buildFeatures { buildConfig true }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    sourceSets { main.res.srcDir(generatedTrust) }
+    lint { abortOnError true; checkReleaseBuilds true }
+}
+tasks.named('preBuild').configure { dependsOn(generateTrust) }
+dependencies { testImplementation 'junit:junit:4.13.2' }
